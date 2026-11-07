@@ -4,17 +4,19 @@
 #include "SystemSettings.h"
 
 struct InputState {
-  bool leftPressed  = false; // Just pressed this frame
-  bool rightPressed = false;
-  bool okPressed    = false;
+  bool leftPressed     = false; // Just pressed this frame
+  bool rightPressed    = false;
+  bool okPressed       = false;
+  bool okShortReleased = false; // Released before hold threshold (1.2s)
 
-  bool leftHeld     = false; // Currently being held down
-  bool rightHeld    = false;
-  bool okHeld       = false;
+  bool leftHeld        = false; // Currently being held down
+  bool rightHeld       = false;
+  bool okHeld          = false;
 
-  bool bothPressed  = false; // Left + Right pressed together
-  bool menuHold     = false; // OK held for > 1.2 seconds to go to menu
-  bool anyActivity  = false; // Any button was touched or held
+  bool bothPressed     = false; // Left + Right pressed together
+  bool menuHold        = false; // OK held for > 1.2 seconds
+  uint8_t okHoldPct    = 0;     // 0..100% progress toward menuHold
+  bool anyActivity     = false; // Any button was touched or held
 };
 
 class InputManager {
@@ -82,18 +84,29 @@ public:
       _okPressStartTime = now;
       _okHoldTriggered = false;
     } else if (curOk && !_okHoldTriggered) {
-      if (now - _okPressStartTime >= 1200) {
-        st.menuHold = true;
-        _okHoldTriggered = true;
-        triggerLed(150); // Feedback vibration/light for menu exit
+      uint32_t heldMs = now - _okPressStartTime;
+      if (heldMs > 150) {
+        uint32_t p = ((heldMs - 150) * 100) / 1050;
+        st.okHoldPct = (p > 100) ? 100 : (uint8_t)p;
       }
+      if (heldMs >= 1200) {
+        st.menuHold = true;
+        st.okHoldPct = 100;
+        _okHoldTriggered = true;
+        triggerLed(150);
+      }
+    } else if (!curOk && _lastOk) {
+      if (!_okHoldTriggered && (now - _okPressStartTime < 1200)) {
+        st.okShortReleased = true;
+      }
+      _okHoldTriggered = false;
     }
 
     _lastLeft  = curLeft;
     _lastRight = curRight;
     _lastOk    = curOk;
 
-    if (curLeft || curRight || curOk || st.leftPressed || st.rightPressed || st.okPressed) {
+    if (curLeft || curRight || curOk || st.leftPressed || st.rightPressed || st.okPressed || st.okShortReleased) {
       _lastActivityMs = now;
       st.anyActivity = true;
     }
