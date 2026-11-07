@@ -159,7 +159,7 @@ public:
       data.idle_enabled_mask |= IDLE_MASK_ABOUT_QR;
 
       data.idle_random_mode  = prefs.getUChar("idlernd", 1);
-      data.idle_lock_qr      = prefs.getUChar("lockqr", 0);
+      data.idle_lock_qr      = 0;
       data.led_enabled       = prefs.getUChar("led", 1);
       data.night_mode_enabled= prefs.getUChar("night_en", 0);
       data.night_start_hour  = prefs.getUChar("night_st", 23);

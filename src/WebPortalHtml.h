@@ -65,9 +65,35 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
   .wifi-item { display: flex; justify-content: space-between; align-items: center; gap: 6px; background: #0b0f17; padding: 7px 10px; border-radius: 6px; margin-top: 6px; border: 1px solid var(--border); font-size: 13px; }
   .hint { font-size: 12px; color: var(--muted); margin: 4px 0 0 0; }
   #srcVideo { position: fixed; left: -9999px; top: 0; width: 64px; height: 64px; opacity: 0.01; pointer-events: none; z-index: -1; }
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(7, 10, 16, 0.85);
+    backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal-card {
+    background: var(--card); border: 2px solid var(--accent); border-radius: 14px; padding: 22px 20px;
+    width: 100%; max-width: 340px; text-align: center; box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+  }
+  .spinner {
+    width: 42px; height: 42px; border: 4px solid #1e293b; border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px auto;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .prog-bg { width: 100%; height: 12px; background: #090d14; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); margin-top: 12px; }
+  .prog-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--green)); transition: width 0.15s ease; }
 </style>
 </head>
 <body>
+<!-- Processing & Upload Modal Popup -->
+<div id="busyModal" class="modal-overlay">
+  <div class="modal-card">
+    <div class="spinner" id="busySpinner"></div>
+    <div id="busyTitle" style="font-size:16px; font-weight:700; color:#fff; margin-bottom:6px;">⏳ กำลังดำเนินการ...</div>
+    <div id="busyStep" class="hint" style="color:var(--accent); font-size:13px; font-weight:600;">กรุณารอสักครู่ ห้ามปิดหน้านี้</div>
+    <div class="prog-bg"><div id="busyBar" class="prog-fill"></div></div>
+    <div id="busyPct" style="font-size:13px; font-weight:700; color:var(--gold); margin-top:8px;">0%</div>
+  </div>
+</div>
 <div class="container">
   <div class="topbar">
     <div>
@@ -165,13 +191,6 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
           </label>
           <button type="button" class="sm gold" onclick="previewIdle(6)">👁️ ดูบนจอ</button>
         </div>
-      </div>
-
-      <div class="chk-item" style="margin-top:8px; border-color:var(--gold);">
-        <label class="chk-left">
-          <input type="checkbox" id="chkLockQr" />
-          <span style="color:var(--gold); font-weight:700;" data-i18n="id_lock_qr">🔒 ล็อกหน้าจอ Idle ให้แสดงเฉพาะ PromptPay QR Code ตลอดเวลา</span>
-        </label>
       </div>
 
       <div class="chk-item" style="margin-top:8px;">
@@ -312,14 +331,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       <div style="margin: 14px auto; display:inline-block; padding:12px; background:#fff; border-radius:12px;">
         <canvas id="qrCanvas" width="112" height="112" style="width:224px; height:224px; image-rendering:pixelated; display:block;"></canvas>
       </div>
-      <div style="font-weight:700; color:var(--gold); margin-bottom:8px;" data-i18n="ab_scan">📱 สแกน PromptPay QR เพื่อสนับสนุนค่ากาแฟผู้พัฒนา (Zotix)</div>
-
-      <div class="chk-item" style="justify-content:center; margin:10px 0; border-color:var(--gold);">
-        <label class="chk-left" style="justify-content:center;">
-          <input type="checkbox" id="chkLockQrAbout" onchange="document.getElementById('chkLockQr').checked=this.checked; saveAllSettings(true);" />
-          <span style="color:var(--gold); font-weight:700;" data-i18n="id_lock_qr">🔒 ล็อกหน้าจอ Idle ให้แสดงเฉพาะ PromptPay QR Code ตลอดเวลา</span>
-        </label>
-      </div>
+      <div style="font-weight:700; color:var(--gold); margin-bottom:10px;" data-i18n="ab_scan">📱 สแกน PromptPay QR เพื่อสนับสนุนค่ากาแฟผู้พัฒนา (Zotix)</div>
 
       <div class="row">
         <button type="button" class="gold" id="btnShowQrEsp" data-i18n="ab_show_esp">👁️ แสดง QR Code บนจอ LyMini ทันที</button>
@@ -471,6 +483,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 
   // --- Real-Time Connection Heartbeat Check (Every 4s) ---
   async function checkConnectionHeartbeat() {
+    if (isUploadingMedia) return;
     const badge = document.getElementById('connBadge');
     try {
       const ctrl = new AbortController();
@@ -727,6 +740,24 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     uploadMsg.innerText = '✅ Sent to LyMini screen!';
   };
 
+  const busyModal = document.getElementById('busyModal');
+  const busyTitle = document.getElementById('busyTitle');
+  const busyStep  = document.getElementById('busyStep');
+  const busyBar   = document.getElementById('busyBar');
+  const busyPct   = document.getElementById('busyPct');
+
+  function showBusyModal(title, step, pct) {
+    busyModal.classList.add('show');
+    busyTitle.innerText = title;
+    busyStep.innerText  = step;
+    busyBar.style.width = pct + '%';
+    busyPct.innerText   = Math.round(pct) + '%';
+  }
+
+  function hideBusyModal() {
+    busyModal.classList.remove('show');
+  }
+
   document.getElementById('btnUploadMedia').onclick = async () => {
     if (mediaType === 'none') {
       uploadMsg.innerText = (curLang === 'th') ? '⚠️ กรุณาเลือกรูปหรือวิดีโอก่อนครับ' : '⚠️ Please select a photo or video first';
@@ -735,60 +766,117 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 
     isUploadingMedia = true;
     liveQueued = false;
+    if (animReq) cancelAnimationFrame(animReq);
+
+    showBusyModal(
+      (curLang === 'th') ? '⏳ กำลังดำเนินการบันทึก...' : '⏳ Processing & Saving...',
+      (curLang === 'th') ? 'กำลังเตรียมการเชื่อมต่อกับบอร์ด...' : 'Preparing upload...',
+      5
+    );
+
+    // Wait for any in-flight liveframe request to finish first so ESP32 WebServer is free
+    let waitTicks = 0;
+    while (liveBusy && waitTicks < 30) {
+      await new Promise(r => setTimeout(r, 40));
+      waitTicks++;
+    }
 
     try {
       if (mediaType === 'image') {
-        uploadMsg.innerText = '⏳ Uploading 128x128 RGB565...';
+        showBusyModal(
+          (curLang === 'th') ? '🖼️ กำลังบันทึกรูปภาพ...' : '🖼️ Saving Photo...',
+          (curLang === 'th') ? 'กำลังส่งข้อมูลภาพ 128×128 ลงบอร์ด...' : 'Uploading 128×128 RGB565...',
+          45
+        );
         const buf = canvasToRgb565();
         const fname = 'img_' + (Date.now() % 100000) + '.rgb';
         const fd = new FormData();
         fd.append('file', new Blob([buf], { type: 'application/octet-stream' }), fname);
         const res = await fetch('/api/upload?folder=photos', { method: 'POST', body: fd });
         if (res.ok) {
-          uploadMsg.innerText = '✅ Uploaded & displayed on LyMini!';
+          showBusyModal(
+            (curLang === 'th') ? '✅ บันทึกรูปภาพสำเร็จ!' : '✅ Photo Saved!',
+            (curLang === 'th') ? 'กำลังแสดงผลบนหน้าจอ LyMini' : 'Displayed on LyMini screen!',
+            100
+          );
+          uploadMsg.innerText = (curLang === 'th') ? '✅ บันทึกรูปภาพและแสดงบนหน้าจอเรียบร้อย!' : '✅ Uploaded & displayed on LyMini!';
+          await new Promise(r => setTimeout(r, 700));
           loadStatusAndMedia();
+        } else {
+          throw new Error('Upload failed');
         }
       } else if (mediaType === 'video') {
-        if (animReq) cancelAnimationFrame(animReq);
-        const frames = 16;
-        const totalBytes = 8 + frames * 128 * 128;
-        const mvid = new Uint8Array(totalBytes);
-        // Header: 'M','V','1', format=1(RGB332), w=128, h=128, fps=10, frames=16
-        mvid.set([77, 86, 49, 1, 128, 128, 10, frames], 0);
+        const frames = 10;
+        const fps = 9;
+        const fname = 'vid_' + (Date.now() % 100000) + '.mvid';
 
-        // Capture frames by playing or stepping through the video so iOS & Android decode real moving frames!
-        srcVideo.currentTime = 0.01;
+        showBusyModal(
+          (curLang === 'th') ? '🎬 กำลังประมวลผลและบันทึกวิดีโอ...' : '🎬 Converting & Saving Video...',
+          (curLang === 'th') ? 'กำลังเตรียมพื้นที่จัดเก็บในบอร์ด...' : 'Initializing video file on board...',
+          8
+        );
+
+        const initRes = await fetch(`/api/upload_init?name=${encodeURIComponent(fname)}&frames=${frames}&fps=${fps}`, { method: 'POST' });
+        if (!initRes.ok) throw new Error('Init failed');
+
+        // Ensure video is playing so frames advance naturally on iOS/Android/PC
         await srcVideo.play().catch(() => {});
 
-        const dur = Math.min(Math.max(srcVideo.duration || 2.0, 0.8), 3.2);
-        const stepMs = Math.max(85, Math.floor((dur * 1000) / frames));
+        const rawDur = (srcVideo.duration && isFinite(srcVideo.duration) && srcVideo.duration > 0.2) ? srcVideo.duration : 2.0;
+        const dur = Math.min(Math.max(rawDur, 0.8), 2.8);
+        const stepMs = Math.max(95, Math.floor((dur * 1000) / frames));
 
         for (let f = 0; f < frames; f++) {
+          const pct = 10 + Math.round(((f + 1) / frames) * 82);
+          showBusyModal(
+            (curLang === 'th') ? '🎬 กำลังประมวลผลและบันทึกวิดีโอ...' : '🎬 Saving Video to LyMini...',
+            (curLang === 'th') ? `กำลังสกัดและบันทึกเฟรมที่ ${f + 1} / ${frames}...` : `Capturing & saving frame ${f + 1} / ${frames}...`,
+            pct
+          );
+
           if (srcVideo.paused) {
-            srcVideo.currentTime = Math.min((f * dur) / frames + 0.02, (srcVideo.duration || dur) - 0.01);
+            try { srcVideo.currentTime = Math.min((f * dur) / frames + 0.02, rawDur - 0.01); } catch (e) {}
           }
           await new Promise(r => setTimeout(r, stepMs));
+
           renderSourceToCanvas(srcVideo, srcVideo.videoWidth || 128, srcVideo.videoHeight || 128);
           const fbuf = canvasToRgb332();
-          mvid.set(fbuf, 8 + f * 16384);
-          uploadMsg.innerText = `🎬 Capturing moving frame ${f + 1}/${frames}...`;
+          const fd = new FormData();
+          fd.append('frame', new Blob([fbuf], { type: 'application/octet-stream' }), `f${f}.bin`);
+          const fRes = await fetch(`/api/upload_frame?idx=${f}`, { method: 'POST', body: fd });
+          if (!fRes.ok) throw new Error('Frame upload failed');
         }
 
-        srcVideo.pause();
-        uploadMsg.innerText = '🚀 Uploading animated video (.mvid) to LyMini...';
-        const fname = 'vid_' + (Date.now() % 100000) + '.mvid';
-        const fd = new FormData();
-        // Filename ends with .mvid so ESP32 knows it is a video even before query args!
-        fd.append('file', new Blob([mvid], { type: 'application/octet-stream' }), fname);
-        const res = await fetch('/api/upload?folder=videos', { method: 'POST', body: fd });
-        if (res.ok) {
-          uploadMsg.innerText = (curLang === 'th')
-            ? '✅ อัปโหลดวิดีโอสำเร็จ! กำลังเล่นภาพเคลื่อนไหวบนจอ LyMini'
-            : '✅ Video uploaded & playing on LyMini!';
-          loadStatusAndMedia();
-        }
+        showBusyModal(
+          (curLang === 'th') ? '🚀 กำลังเปิดเล่นวิดีโอบนหน้าจอ...' : '🚀 Finalizing Video...',
+          (curLang === 'th') ? 'กำลังบันทึกไฟล์และแสดงผลบน LyMini...' : 'Flushing to flash & starting playback...',
+          96
+        );
+
+        await fetch('/api/upload_finish', { method: 'POST' });
+
+        showBusyModal(
+          (curLang === 'th') ? '✅ บันทึกวิดีโอสำเร็จ!' : '✅ Video Saved!',
+          (curLang === 'th') ? 'กำลังเล่นวิดีโอเคลื่อนไหวบนจอ LyMini' : 'Playing animated video on LyMini!',
+          100
+        );
+
+        uploadMsg.innerText = (curLang === 'th')
+          ? '✅ บันทึกวิดีโอสำเร็จ! กำลังเล่นภาพเคลื่อนไหวบนจอ LyMini'
+          : '✅ Video saved & playing on LyMini!';
+
+        await new Promise(r => setTimeout(r, 800));
+        loadStatusAndMedia();
+        // Resume preview loop in browser
+        srcVideo.play().then(() => videoLoop()).catch(() => {});
       }
+    } catch (err) {
+      uploadMsg.innerText = (curLang === 'th')
+        ? '❌ เกิดข้อผิดพลาดในการบันทึก กรุณาลองใหม่อีกครั้ง'
+        : '❌ Save failed, please try again';
+      alert(uploadMsg.innerText);
     } finally {
+      hideBusyModal();
       isUploadingMedia = false;
     }
   };
@@ -839,8 +927,6 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       document.getElementById('chkAboutQr').checked    = true; // Always checked & locked
       document.getElementById('chkClkWeather').checked = (st.idleMask & 128) !== 0;
 
-      document.getElementById('chkLockQr').checked      = st.idleLockQr === 1;
-      document.getElementById('chkLockQrAbout').checked = st.idleLockQr === 1;
       document.getElementById('chkRandom').checked      = st.idleRandom === 1;
       document.getElementById('inpIdleTime').value      = st.idleTimeout;
       document.getElementById('inpIdleCycle').value     = st.idleCycle;
@@ -941,7 +1027,6 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     const params = new URLSearchParams({
       idlemask: mask,
       idlernd: document.getElementById('chkRandom').checked ? 1 : 0,
-      lockqr: document.getElementById('chkLockQr').checked ? 1 : 0,
       idletime: document.getElementById('inpIdleTime').value,
       idlecyc: document.getElementById('inpIdleCycle').value,
       bright: rngBright.value,

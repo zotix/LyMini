@@ -65,6 +65,39 @@ private:
     _server.send(302, "text/plain", "Redirecting to LyMini Portal...");
   }
 
+  void ensureFreeSpaceForMedia(size_t neededBytes, const char* preferredDir) {
+    if (_idle) _idle->closeActiveVideo();
+    for (int pass = 0; pass < 8; ++pass) {
+      size_t totalB = LittleFS.totalBytes();
+      size_t usedB  = LittleFS.usedBytes();
+      if (totalB > usedB && (totalB - usedB) >= neededBytes) return;
+
+      String victim = "";
+      const char* dirs[2] = { preferredDir, "/videos" };
+      for (int d = 0; d < 2 && victim.length() == 0; ++d) {
+        File dir = LittleFS.open(dirs[d]);
+        if (dir && dir.isDirectory()) {
+          File f = dir.openNextFile();
+          while (f) {
+            if (!f.isDirectory()) {
+              String n = f.name();
+              int sl = n.lastIndexOf('/');
+              if (sl >= 0) n = n.substring(sl + 1);
+              victim = String(dirs[d]) + "/" + n;
+              break;
+            }
+            f = dir.openNextFile();
+          }
+        }
+      }
+      if (victim.length() > 0) {
+        LittleFS.remove(victim);
+      } else {
+        break;
+      }
+    }
+  }
+
 public:
   WebPortal() : _server(80) {}
 
@@ -230,6 +263,7 @@ public:
     // 8. Upload Photo (.rgb) or Video (.mvid) and immediately display/play on ESP32
     _server.on("/api/upload", HTTP_POST, [this]() {
       gPower.notifyWebActivity();
+      if (_uploadFile) _uploadFile.close();
       if (_idle && _lastUploadedPath.length() > 0) {
         _idle->clearLiveViewBuffer();
         _idle->showSpecificMedia(_lastUploadedPath.c_str());
@@ -240,7 +274,11 @@ public:
       HTTPUpload& upload = _server.upload();
       if (upload.status == UPLOAD_FILE_START) {
         gPower.notifyWebActivity();
-        if (_idle) _idle->clearLiveViewBuffer();
+        if (_idle) {
+          _idle->clearLiveViewBuffer();
+          _idle->closeActiveVideo();
+        }
+        if (_uploadFile) _uploadFile.close();
         String fname = upload.filename;
         int slash = fname.lastIndexOf('/');
         if (slash >= 0) fname = fname.substring(slash + 1);
@@ -248,16 +286,93 @@ public:
         if (folder == "videos" || fname.endsWith(".mvid")) {
           if (!fname.endsWith(".mvid")) fname += ".mvid";
           _lastUploadedPath = "/videos/" + fname;
+          ensureFreeSpaceForMedia(195000, "/videos");
         } else {
           if (!fname.endsWith(".rgb")) fname += ".rgb";
           _lastUploadedPath = "/photos/" + fname;
+          ensureFreeSpaceForMedia(48000, "/photos");
         }
         _uploadFile = LittleFS.open(_lastUploadedPath, "w");
       } else if (upload.status == UPLOAD_FILE_WRITE) {
         if (_uploadFile) _uploadFile.write(upload.buf, upload.currentSize);
       } else if (upload.status == UPLOAD_FILE_END) {
-        if (_uploadFile) _uploadFile.close();
+        if (_uploadFile) {
+          _uploadFile.flush();
+          _uploadFile.close();
+        }
       }
+    });
+
+    // 8b. Reliable Frame-by-Frame Video Upload Pipeline (/api/upload_init -> /api/upload_frame -> /api/upload_finish)
+    _server.on("/api/upload_init", HTTP_POST, [this]() {
+      gPower.notifyWebActivity();
+      if (_uploadFile) _uploadFile.close();
+      if (_idle) {
+        _idle->clearLiveViewBuffer();
+        _idle->closeActiveVideo();
+      }
+      String fname = _server.hasArg("name") ? _server.arg("name") : ("vid_" + String(millis() % 100000) + ".mvid");
+      int slash = fname.lastIndexOf('/');
+      if (slash >= 0) fname = fname.substring(slash + 1);
+      if (!fname.endsWith(".mvid")) fname += ".mvid";
+      _lastUploadedPath = "/videos/" + fname;
+
+      uint8_t frames = _server.hasArg("frames") ? constrain(_server.arg("frames").toInt(), 1, 24) : 10;
+      uint8_t fps    = _server.hasArg("fps") ? constrain(_server.arg("fps").toInt(), 4, 24) : 9;
+
+      size_t needed = (size_t)frames * 16384UL + 28672UL;
+      ensureFreeSpaceForMedia(needed, "/videos");
+
+      _uploadFile = LittleFS.open(_lastUploadedPath, "w");
+      if (!_uploadFile) {
+        _server.send(500, "text/plain", "ERR_OPEN");
+        return;
+      }
+      uint8_t hdr[8] = { 'M', 'V', '1', 1, 128, 128, fps, frames };
+      _uploadFile.write(hdr, 8);
+      _uploadFile.flush();
+      _server.send(200, "text/plain", "OK");
+    });
+
+    _server.on("/api/upload_frame", HTTP_POST, [this]() {
+      gPower.notifyWebActivity();
+      if (_uploadFile) _uploadFile.flush();
+      if (_display && _idle) {
+        _idle->activateLiveViewBuffer();
+        _requestEnterIdle = true;
+        _display->present();
+      }
+      _server.send(200, "text/plain", "OK");
+    }, [this]() {
+      HTTPUpload& up = _server.upload();
+      if (up.status == UPLOAD_FILE_START) {
+        gPower.notifyWebActivity();
+        _livePixelIdx = 0;
+      } else if (up.status == UPLOAD_FILE_WRITE) {
+        if (_uploadFile) {
+          _uploadFile.write(up.buf, up.currentSize);
+        }
+        if (_display) {
+          uint16_t* dst = _display->getBuffer();
+          for (size_t i = 0; i < up.currentSize && _livePixelIdx < (SCREEN_WIDTH * SCREEN_HEIGHT); ++i) {
+            dst[_livePixelIdx++] = expandRgb332(up.buf[i]);
+          }
+        }
+      }
+    });
+
+    _server.on("/api/upload_finish", HTTP_POST, [this]() {
+      gPower.notifyWebActivity();
+      if (_uploadFile) {
+        _uploadFile.flush();
+        _uploadFile.close();
+      }
+      if (_idle && _lastUploadedPath.length() > 0) {
+        _idle->clearLiveViewBuffer();
+        _idle->showSpecificMedia(_lastUploadedPath.c_str());
+        _requestEnterIdle = true;
+      }
+      _server.send(200, "text/plain", "OK");
     });
 
     // 9. Show specific file immediately on ESP32 screen
@@ -399,9 +514,7 @@ public:
       if (_server.hasArg("idlernd")) {
         gSettings.data.idle_random_mode = (uint8_t)_server.arg("idlernd").toInt();
       }
-      if (_server.hasArg("lockqr")) {
-        gSettings.data.idle_lock_qr = (_server.arg("lockqr").toInt() != 0) ? 1 : 0;
-      }
+      gSettings.data.idle_lock_qr = 0;
       gSettings.save();
       if (_idle) _idle->scanMediaFiles();
       _server.send(200, "text/plain", "Settings Saved");

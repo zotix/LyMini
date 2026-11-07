@@ -93,11 +93,6 @@ private:
     _liveBufferActive = false;
     _photoLoaded = false;
 
-    if (gSettings.data.idle_lock_qr) {
-      _currentScreen = 6;
-      return;
-    }
-
     uint8_t enabledList[8];
     uint8_t cnt = 0;
     for (uint8_t i = 0; i < 8; ++i) {
@@ -288,16 +283,15 @@ public:
     _liveBufferActive = false;
   }
 
+  void closeActiveVideo() {
+    if (_videoFile) _videoFile.close();
+  }
+
   bool update(const InputState& input, float dt) {
     if (input.okShortReleased || input.menuHold) {
       if (_videoFile) _videoFile.close();
       _liveBufferActive = false;
       return true;
-    }
-
-    if (gSettings.data.idle_lock_qr && !_liveBufferActive && millis() > _liveHoldUntilMs) {
-      _currentScreen = 6;
-      return false;
     }
 
     if (!_liveBufferActive && !isScreenEligible(_currentScreen) && millis() > _liveHoldUntilMs) {

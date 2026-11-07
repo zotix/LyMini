@@ -17,6 +17,7 @@ private:
   uint8_t _colOffset = 1;
   uint8_t _rowOffset = 2;
   bool    _colorBgr  = true;
+  uint8_t _brightness = 85; // 0..100% (Hardware PWM + Software RGB565 Luminance Scaling)
 
   inline void writeCommand(uint8_t cmd) {
     digitalWrite(PIN_TFT_DC, LOW);
@@ -149,9 +150,16 @@ public:
 
   void setBrightness(uint8_t percent) {
     if (percent > 100) percent = 100;
-    uint32_t duty = (percent * 255) / 100;
+    uint8_t prev = _brightness;
+    _brightness = percent;
+    uint32_t duty = ((uint32_t)percent * 255) / 100;
     ledcWrite(PIN_TFT_BL, duty);
+    if (_spi && prev != _brightness) {
+      present();
+    }
   }
+
+  uint8_t getBrightness() const { return _brightness; }
 
   uint16_t* getBuffer() { return _buffer; }
 
@@ -182,6 +190,8 @@ public:
   }
 
   void present() {
+    if (!_spi) return;
+
     if (_shakeFrames > 0) {
       _shakeX = (random(0, 3) - 1);
       _shakeY = (random(0, 3) - 1);
@@ -193,20 +203,45 @@ public:
 
     setAddrWindow(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
 
-    // Byte-swap 16-bit RGB565 pixels (Little-Endian -> Big-Endian MSB first for ST7735 SPI)
-    for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; ++i) {
-      _buffer[i] = __builtin_bswap16(_buffer[i]);
+    // Software RGB565 luminance scaling guarantees smooth 0%..100% brightness control
+    // even on Spotpear PCB revisions where the LCD backlight LED is tied directly to 3.3V.
+    uint32_t scale = 256;
+    if (_brightness == 0) {
+      scale = 0;
+    } else if (_brightness < 100) {
+      // Smooth perceptual curve across 5%..99%
+      scale = ((uint32_t)_brightness * (uint32_t)(_brightness + 156)) / 100;
+      if (scale < 12) scale = 12;
+      if (scale > 255) scale = 255;
     }
+
+    uint16_t txBuf[512];
+    const int totalPixels = SCREEN_WIDTH * SCREEN_HEIGHT;
 
     digitalWrite(PIN_TFT_DC, HIGH);
     digitalWrite(PIN_TFT_CS, LOW);
-    _spi->writeBytes((uint8_t*)_buffer, sizeof(_buffer));
-    digitalWrite(PIN_TFT_CS, HIGH);
 
-    // Restore Little-Endian in framebuffer in case static screens skip redrawing
-    for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; ++i) {
-      _buffer[i] = __builtin_bswap16(_buffer[i]);
+    for (int offset = 0; offset < totalPixels; offset += 512) {
+      if (scale >= 256) {
+        for (int j = 0; j < 512; ++j) {
+          txBuf[j] = __builtin_bswap16(_buffer[offset + j]);
+        }
+      } else if (scale == 0) {
+        memset(txBuf, 0, sizeof(txBuf));
+      } else {
+        for (int j = 0; j < 512; ++j) {
+          uint16_t c = _buffer[offset + j];
+          uint32_t r = (((c >> 11) & 0x1F) * scale) >> 8;
+          uint32_t g = (((c >> 5)  & 0x3F) * scale) >> 8;
+          uint32_t b = (( c        & 0x1F) * scale) >> 8;
+          uint16_t dimmed = (uint16_t)((r << 11) | (g << 5) | b);
+          txBuf[j] = __builtin_bswap16(dimmed);
+        }
+      }
+      _spi->writeBytes((uint8_t*)txBuf, sizeof(txBuf));
     }
+
+    digitalWrite(PIN_TFT_CS, HIGH);
   }
 
   inline void drawPixel(int16_t x, int16_t y, uint16_t color) {
