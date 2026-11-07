@@ -1,0 +1,13 @@
+# Arduino & ESP32 Build outputs
+.pio/
+build/
+*.bin
+*.elf
+*.map
+
+# OS & Editor
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+*.tmp
