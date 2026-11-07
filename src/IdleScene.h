@@ -13,15 +13,17 @@
 
 class IdleScene {
 private:
-  // Screens (0..6):
+  // Screens (0..7):
   // 0: Cyber Digital Clock
-  // 1: Weather & Temp
+  // 1: Weather & Temp (Multi-location)
   // 2: Photo Frame
   // 3: Video / TV Animation
   // 4: Analog Clock
   // 5: Flip Clock
-  // 6: About Me & PromptPay QR
+  // 6: About Me & PromptPay QR (Mandatory, always enabled)
+  // 7: Clock + Weather Combo Screen
   uint8_t  _currentScreen;
+  uint8_t  _curWeatherCityIdx;
   uint32_t _screenTimer;
   uint32_t _liveHoldUntilMs;
   bool     _liveBufferActive;
@@ -56,50 +58,54 @@ private:
   }
 
   bool isScreenEligible(uint8_t scr) const {
-    uint8_t mask = gSettings.data.idle_enabled_mask;
-    if (mask == 0) mask = IDLE_MASK_ALL;
+    // Screen 6 (PromptPay QR) is mandatory and ALWAYS enabled!
+    if (scr == 6) return true;
+
+    uint8_t mask = gSettings.data.idle_enabled_mask | IDLE_MASK_ABOUT_QR;
     if ((mask & (1 << scr)) == 0) return false;
 
-    // Requirement: If no NTP time synced, do NOT show any Clock screens (0: Digital, 4: Analog, 5: Flip)
-    if ((scr == 0 || scr == 4 || scr == 5) && !gPower.isTimeSynced()) {
+    // If no NTP time synced, do NOT show Clock screens (0: Digital, 4: Analog, 5: Flip, 7: Clock+Weather)
+    if ((scr == 0 || scr == 4 || scr == 5 || scr == 7) && !gPower.isTimeSynced()) {
       return false;
     }
 
-    // Requirement: If no valid Weather data, do NOT show Weather screen (1)
-    if (scr == 1 && !gPower.hasValidWeather()) {
+    // If no valid Weather data, do NOT show Weather screens (1: Weather, 7: Clock+Weather)
+    if ((scr == 1 || scr == 7) && !gPower.hasValidWeather()) {
       return false;
     }
 
     return true;
   }
 
+  void advanceWeatherCity() {
+    if (gSettings.data.weather_count <= 1) {
+      _curWeatherCityIdx = 0;
+      return;
+    }
+    for (int tries = 0; tries < gSettings.data.weather_count; ++tries) {
+      _curWeatherCityIdx = (_curWeatherCityIdx + 1) % gSettings.data.weather_count;
+      if (gPower.hasValidWeather(_curWeatherCityIdx)) return;
+    }
+    _curWeatherCityIdx = 0;
+  }
+
   void pickNextScreen(int8_t dir = 1) {
     _liveBufferActive = false;
     _photoLoaded = false;
 
-    // If user locked Idle on PromptPay QR code, stay on screen 6!
     if (gSettings.data.idle_lock_qr) {
       _currentScreen = 6;
       return;
     }
 
-    uint8_t enabledList[7];
+    uint8_t enabledList[8];
     uint8_t cnt = 0;
-    for (uint8_t i = 0; i < 7; ++i) {
+    for (uint8_t i = 0; i < 8; ++i) {
       if (isScreenEligible(i)) enabledList[cnt++] = i;
     }
 
-    // Fallback if all selected screens were filtered out (e.g. only clocks/weather enabled without Wi-Fi)
     if (cnt == 0) {
-      if (_photoCount > 0) {
-        enabledList[cnt++] = 2;
-      }
-      if (_videoCount > 0) {
-        enabledList[cnt++] = 3;
-      }
-      if (cnt == 0) {
-        enabledList[cnt++] = 6; // About & PromptPay QR
-      }
+      enabledList[cnt++] = 6; // PromptPay QR is always available
     }
 
     if (gSettings.data.idle_random_mode && dir == 0 && cnt > 1) {
@@ -118,7 +124,9 @@ private:
       }
     }
 
-    if (_currentScreen == 2 && _photoCount > 0) {
+    if (_currentScreen == 1 || _currentScreen == 7) {
+      advanceWeatherCity();
+    } else if (_currentScreen == 2 && _photoCount > 0) {
       if (gSettings.data.idle_random_mode) {
         _curPhotoIdx = random(0, _photoCount);
       } else {
@@ -158,7 +166,7 @@ private:
   }
 
 public:
-  IdleScene() : _currentScreen(2), _screenTimer(0), _liveHoldUntilMs(0), _liveBufferActive(false),
+  IdleScene() : _currentScreen(2), _curWeatherCityIdx(0), _screenTimer(0), _liveHoldUntilMs(0), _liveBufferActive(false),
                 _photoCount(0), _curPhotoIdx(0), _photoLoaded(false),
                 _videoCount(0), _curVideoIdx(0), _vidFormat(1), _vidFps(12),
                 _vidFrameCount(1), _vidCurFrame(0), _lastVidFrameMs(0) {}
@@ -210,20 +218,33 @@ public:
     pickNextScreen(0);
   }
 
-  void showPromptPayQrNow() {
+  // Triggered from Web Portal "Preview Idle Screen on ESP" button
+  void previewScreenFromWeb(uint8_t scrIdx, int8_t cityIdx = -1) {
+    scanMediaFiles();
     _screenTimer = millis();
-    _liveHoldUntilMs = millis() + 30000UL;
+    _liveHoldUntilMs = millis() + 25000UL;
     _liveBufferActive = false;
-    _currentScreen = 6;
+    _photoLoaded = false;
+    _currentScreen = scrIdx % 8;
+    if (cityIdx >= 0 && cityIdx < gSettings.data.weather_count) {
+      _curWeatherCityIdx = (uint8_t)cityIdx;
+    }
+    if (_currentScreen == 3 && _videoCount > 0) {
+      openCurrentVideo();
+    }
   }
 
-  // Triggered from Web Portal "Show on ESP" button
+  void showPromptPayQrNow() {
+    previewScreenFromWeb(6);
+  }
+
+  // Triggered from Web Portal Upload or "Show on ESP" button
   void showSpecificMedia(const char* fullPath) {
     if (!fullPath) return;
     scanMediaFiles();
     _screenTimer = millis();
     _liveHoldUntilMs = millis() + 30000UL;
-    _liveBufferActive = false;
+    _liveBufferActive = false; // Crucial: Clear live frame hold so .mvid video plays animated frames!
 
     String p(fullPath);
     if (p.endsWith(".rgb")) {
@@ -257,14 +278,16 @@ public:
     }
   }
 
-  // Triggered when Web Portal streams a Live Frame directly into DisplayCanvas buffer
   void activateLiveViewBuffer() {
     _liveBufferActive = true;
-    _liveHoldUntilMs = millis() + 15000UL;
+    _liveHoldUntilMs = millis() + 10000UL;
     _screenTimer = millis();
   }
 
-  // Returns true if user pressed BOOT to wake up back to Menu/Game
+  void clearLiveViewBuffer() {
+    _liveBufferActive = false;
+  }
+
   bool update(const InputState& input, float dt) {
     if (input.okShortReleased || input.menuHold) {
       if (_videoFile) _videoFile.close();
@@ -272,26 +295,27 @@ public:
       return true;
     }
 
-    if (gSettings.data.idle_lock_qr && !_liveBufferActive) {
+    if (gSettings.data.idle_lock_qr && !_liveBufferActive && millis() > _liveHoldUntilMs) {
       _currentScreen = 6;
       return false;
     }
 
-    // If current screen became ineligible (e.g. toggled off in web settings), switch immediately
     if (!_liveBufferActive && !isScreenEligible(_currentScreen) && millis() > _liveHoldUntilMs) {
       pickNextScreen(0);
     }
 
-    // Manual Left / Right switching between Idle screens or photos/videos
+    // Manual Left / Right switching between Idle screens
     if (input.leftPressed) {
+      _liveHoldUntilMs = 0;
       pickNextScreen(-1);
       _screenTimer = millis();
     } else if (input.rightPressed) {
+      _liveHoldUntilMs = 0;
       pickNextScreen(1);
       _screenTimer = millis();
     }
 
-    // Auto-cycle idle screens (unless held by Web Live View)
+    // Auto-cycle idle screens (unless held by Web Preview / Live View)
     uint32_t cycleMs = (uint32_t)max((uint16_t)5, gSettings.data.idle_cycle_sec) * 1000UL;
     if (millis() > _liveHoldUntilMs && (millis() - _screenTimer >= cycleMs)) {
       _screenTimer = millis();
@@ -302,21 +326,21 @@ public:
   }
 
   void render(DisplayCanvas& gfx) {
-    // If Web Live View wrote directly to the framebuffer, keep it intact!
     if (_liveBufferActive && millis() <= _liveHoldUntilMs) {
       return;
     }
     _liveBufferActive = false;
 
     switch (_currentScreen) {
-      case 0: renderClock(gfx);       break;
-      case 1: renderWeather(gfx);     break;
-      case 2: renderPhoto(gfx);       break;
-      case 3: renderVideo(gfx);       break;
-      case 4: renderAnalogClock(gfx); break;
-      case 5: renderFlipClock(gfx);   break;
-      case 6: renderAboutQr(gfx);     break;
-      default: renderPhoto(gfx);      break;
+      case 0: renderClock(gfx);             break;
+      case 1: renderWeather(gfx);           break;
+      case 2: renderPhoto(gfx);             break;
+      case 3: renderVideo(gfx);             break;
+      case 4: renderAnalogClock(gfx);       break;
+      case 5: renderFlipClock(gfx);         break;
+      case 6: renderAboutQr(gfx);           break;
+      case 7: renderClockWeatherCombo(gfx); break;
+      default: renderPhoto(gfx);            break;
     }
   }
 
@@ -324,31 +348,32 @@ public:
   void renderClock(DisplayCanvas& gfx) {
     gfx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Color565::rgb(10, 12, 24));
 
-    // Top Header
     gfx.fillRect(0, 0, SCREEN_WIDTH, 15, Color565::DeepBlue);
     gfx.drawFastHLine(0, 15, SCREEN_WIDTH, Color565::NeonCyan);
-    gfx.drawCenteredText(4, "CYBER CLOCK", Color565::Cyan);
-
-    time_t now = time(nullptr);
-    struct tm timeinfo;
-    localtime_r(&now, &timeinfo);
+    gfx.drawCenteredText(4, "LYMINI CLOCK", Color565::Cyan);
 
     char timeStr[16];
     char dateStr[24];
-    snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
-    const char* months[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
-    const char* days[]   = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
-    snprintf(dateStr, sizeof(dateStr), "%s, %d %s %d",
-             days[timeinfo.tm_wday % 7], timeinfo.tm_mday, months[timeinfo.tm_mon % 12], timeinfo.tm_year + 1900);
+    if (gPower.isTimeSynced()) {
+      time_t now = time(nullptr);
+      struct tm timeinfo;
+      localtime_r(&now, &timeinfo);
+      snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+      const char* months[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+      const char* days[]   = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+      snprintf(dateStr, sizeof(dateStr), "%s, %d %s %d",
+               days[timeinfo.tm_wday % 7], timeinfo.tm_mday, months[timeinfo.tm_mon % 12], timeinfo.tm_year + 1900);
+    } else {
+      snprintf(timeStr, sizeof(timeStr), "--:--:--");
+      snprintf(dateStr, sizeof(dateStr), "Waiting NTP Sync");
+    }
 
-    // Big Digital Clock Card
     gfx.fillRoundRect(8, 26, 112, 34, 4, Color565::rgb(20, 26, 48));
     gfx.drawRoundRect(8, 26, 112, 34, 4, Color565::NeonCyan);
     gfx.drawCenteredText(36, timeStr, Color565::White, 2);
 
     gfx.drawCenteredText(68, dateStr, Color565::Gold);
 
-    // Status: Wi-Fi & Power Save info
     if (!gPower.isWifiEnabled()) {
       gfx.drawCenteredText(86, "ECO MODE (WiFi OFF)", Color565::Lime);
       char bStr[24];
@@ -356,14 +381,70 @@ public:
       gfx.drawCenteredText(98, bStr, Color565::SkyBlue);
     } else if (WiFi.status() == WL_CONNECTED) {
       gfx.drawCenteredText(86, WiFi.localIP().toString().c_str(), Color565::Lime);
-      gfx.drawCenteredText(98, "http://mini.local", Color565::NeonCyan);
+      gfx.drawCenteredText(98, "http://lymini.local", Color565::NeonCyan);
     } else {
-      gfx.drawCenteredText(86, "AP: Spotpear-Mini", Color565::Orange);
-      gfx.drawCenteredText(98, "http://mini.local", Color565::NeonCyan);
+      gfx.drawCenteredText(86, "AP: LyMini-AP", Color565::Orange);
+      gfx.drawCenteredText(98, "http://lymini.local", Color565::NeonCyan);
     }
 
     gfx.drawFastHLine(0, 114, SCREEN_WIDTH, Color565::Navy);
     gfx.drawCenteredText(118, "A/B:VIEW  BOOT:WAKE", Color565::GrayMid);
+  }
+
+  // 7: Clock + Weather Combo Screen (Shows BOTH Time & Weather together)
+  void renderClockWeatherCombo(DisplayCanvas& gfx) {
+    gfx.fillGradientV(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Color565::rgb(12, 22, 48), Color565::rgb(8, 12, 24));
+
+    // Top Header
+    gfx.fillRect(0, 0, SCREEN_WIDTH, 14, Color565::rgb(18, 36, 76));
+    gfx.drawFastHLine(0, 14, SCREEN_WIDTH, Color565::NeonCyan);
+    gfx.drawCenteredText(3, "LYMINI LIVE STATION", Color565::NeonCyan);
+
+    // Upper Card: Digital Clock & Date (Y=18..62)
+    gfx.fillRoundRect(6, 18, 116, 44, 5, Color565::rgb(16, 24, 44));
+    gfx.drawRoundRect(6, 18, 116, 44, 5, Color565::Cyan);
+
+    char timeStr[16];
+    char dateStr[24];
+    if (gPower.isTimeSynced()) {
+      time_t now = time(nullptr);
+      struct tm ti;
+      localtime_r(&now, &ti);
+      snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d", ti.tm_hour, ti.tm_min, ti.tm_sec);
+      const char* months[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+      const char* days[]   = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+      snprintf(dateStr, sizeof(dateStr), "%s %02d %s %d", days[ti.tm_wday % 7], ti.tm_mday, months[ti.tm_mon % 12], ti.tm_year + 1900);
+    } else {
+      snprintf(timeStr, sizeof(timeStr), "--:--:--");
+      snprintf(dateStr, sizeof(dateStr), "Time Not Synced");
+    }
+    gfx.drawCenteredText(24, timeStr, Color565::White, 2);
+    gfx.drawCenteredText(48, dateStr, Color565::Gold);
+
+    // Lower Card: Multi-Location Weather (Y=66..114)
+    gfx.fillRoundRect(6, 66, 116, 46, 5, Color565::rgb(16, 32, 58));
+    gfx.drawRoundRect(6, 66, 116, 46, 5, Color565::Gold);
+
+    int cIdx = _curWeatherCityIdx % max((uint8_t)1, gSettings.data.weather_count);
+    gfx.drawCenteredText(70, gPower.getWeatherCityName(cIdx), Color565::Yellow);
+
+    // Sun + Cloud mini icon
+    gfx.fillCircle(24, 92, 7, Color565::Yellow);
+    gfx.fillRoundRect(20, 95, 16, 6, 2, Color565::White);
+
+    if (gPower.hasValidWeather(cIdx)) {
+      char tbuf[16];
+      snprintf(tbuf, sizeof(tbuf), "%.1fC", gPower.getWeatherTempC(cIdx));
+      gfx.drawText(44, 83, tbuf, Color565::White, 2);
+
+      char hbuf[20];
+      snprintf(hbuf, sizeof(hbuf), "Humid: %u%%", gPower.getWeatherHumidity(cIdx));
+      gfx.drawText(44, 101, hbuf, Color565::NeonCyan);
+    } else {
+      gfx.drawText(42, 88, "No Weather", Color565::GrayLight);
+    }
+
+    gfx.drawCenteredText(117, "A/B:VIEW  BOOT:WAKE", Color565::GrayMid);
   }
 
   // 4: Analog Clock
@@ -374,13 +455,11 @@ public:
     const int16_t cy = 56;
     const int16_t r  = 46;
 
-    // Outer Bezel & Dial
     gfx.fillCircle(cx, cy, r + 3, Color565::rgb(25, 38, 68));
     gfx.fillCircle(cx, cy, r, Color565::rgb(14, 20, 36));
     gfx.drawCircle(cx, cy, r + 3, Color565::NeonCyan);
     gfx.drawCircle(cx, cy, r, Color565::Gold);
 
-    // 12 Hour Tick Marks
     for (int i = 0; i < 12; ++i) {
       float ang = (i * 30.0f - 90.0f) * 0.01745329f;
       int16_t x0 = cx + (int16_t)(cosf(ang) * (r - (i % 3 == 0 ? 7 : 4)));
@@ -399,31 +478,25 @@ public:
     struct tm ti;
     localtime_r(&now, &ti);
 
-    // Hour Hand
     float hAngle = ((ti.tm_hour % 12) * 30.0f + ti.tm_min * 0.5f - 90.0f) * 0.01745329f;
     int16_t hx = cx + (int16_t)(cosf(hAngle) * 23);
     int16_t hy = cy + (int16_t)(sinf(hAngle) * 23);
     gfx.drawLine(cx, cy, hx, hy, Color565::White);
     gfx.drawLine(cx + 1, cy, hx + 1, hy, Color565::White);
-    gfx.drawLine(cx, cy + 1, hx, hy + 1, Color565::White);
 
-    // Minute Hand
     float mAngle = (ti.tm_min * 6.0f + ti.tm_sec * 0.1f - 90.0f) * 0.01745329f;
     int16_t mx = cx + (int16_t)(cosf(mAngle) * 34);
     int16_t my = cy + (int16_t)(sinf(mAngle) * 34);
     gfx.drawLine(cx, cy, mx, my, Color565::NeonCyan);
     gfx.drawLine(cx + 1, cy, mx + 1, my, Color565::NeonCyan);
 
-    // Second Hand
     float sAngle = (ti.tm_sec * 6.0f - 90.0f) * 0.01745329f;
     int16_t sx = cx + (int16_t)(cosf(sAngle) * 38);
     int16_t sy = cy + (int16_t)(sinf(sAngle) * 38);
     gfx.drawLine(cx, cy, sx, sy, Color565::Red);
 
-    // Center Cap
     gfx.fillCircle(cx, cy, 3, Color565::Gold);
 
-    // Bottom Date & Digital Pill
     const char* months[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
     char footer[24];
     snprintf(footer, sizeof(footer), "%02d:%02d  %d %s", ti.tm_hour, ti.tm_min, ti.tm_mday, months[ti.tm_mon % 12]);
@@ -436,7 +509,7 @@ public:
   void renderFlipClock(DisplayCanvas& gfx) {
     gfx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Color565::rgb(12, 12, 16));
 
-    gfx.drawCenteredText(6, "RETRO FLIP CLOCK", Color565::Gold);
+    gfx.drawCenteredText(6, "LYMINI FLIP CLOCK", Color565::Gold);
 
     time_t now = time(nullptr);
     struct tm ti;
@@ -446,31 +519,25 @@ public:
     snprintf(hStr, sizeof(hStr), "%02d", ti.tm_hour);
     snprintf(mStr, sizeof(mStr), "%02d", ti.tm_min);
 
-    // Left Card: HOURS (X=6, Y=22, W=54, H=64)
     gfx.fillRoundRect(6, 22, 54, 64, 6, Color565::rgb(30, 32, 40));
     gfx.drawRoundRect(6, 22, 54, 64, 6, Color565::GrayMid);
     gfx.drawText(16, 43, hStr, Color565::White, 3);
-    // Horizontal Split-Flap Gap
     gfx.fillRect(6, 53, 54, 2, Color565::Black);
     gfx.fillRect(7, 51, 3, 6, Color565::GrayLight);
     gfx.fillRect(56, 51, 3, 6, Color565::GrayLight);
 
-    // Right Card: MINUTES (X=68, Y=22, W=54, H=64)
     gfx.fillRoundRect(68, 22, 54, 64, 6, Color565::rgb(30, 32, 40));
     gfx.drawRoundRect(68, 22, 54, 64, 6, Color565::GrayMid);
     gfx.drawText(78, 43, mStr, Color565::NeonCyan, 3);
-    // Horizontal Split-Flap Gap
     gfx.fillRect(68, 53, 54, 2, Color565::Black);
     gfx.fillRect(69, 51, 3, 6, Color565::GrayLight);
     gfx.fillRect(118, 51, 3, 6, Color565::GrayLight);
 
-    // Blinking Center Dots
     if ((ti.tm_sec % 2) == 0) {
       gfx.fillCircle(64, 44, 2, Color565::Gold);
       gfx.fillCircle(64, 64, 2, Color565::Gold);
     }
 
-    // Seconds Progress Bar + Date
     int16_t secW = (ti.tm_sec * 108) / 59;
     gfx.drawRect(10, 94, 108, 6, Color565::GrayDark);
     gfx.fillRect(10, 94, secW, 6, Color565::Orange);
@@ -483,28 +550,31 @@ public:
     gfx.drawCenteredText(108, dateBuf, Color565::GrayLight);
   }
 
-  // 1: Weather & Temp
+  // 1: Weather & Temp (Multi-location)
   void renderWeather(DisplayCanvas& gfx) {
     gfx.fillGradientV(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Color565::rgb(25, 60, 130), Color565::rgb(10, 20, 40));
 
-    gfx.drawCenteredText(6, gSettings.data.city_name, Color565::White);
+    int cIdx = _curWeatherCityIdx % max((uint8_t)1, gSettings.data.weather_count);
+    gfx.drawCenteredText(6, gPower.getWeatherCityName(cIdx), Color565::Yellow);
 
-    // Sun + Cloud icon
     gfx.fillCircle(32, 44, 12, Color565::Yellow);
     gfx.drawCircle(32, 44, 15, Color565::Gold);
     gfx.fillRoundRect(26, 48, 24, 10, 4, Color565::White);
 
     char tbuf[16];
-    snprintf(tbuf, sizeof(tbuf), "%.1fC", gPower.getWeatherTempC());
+    snprintf(tbuf, sizeof(tbuf), "%.1fC", gPower.getWeatherTempC(cIdx));
     gfx.drawText(56, 36, tbuf, Color565::White, 2);
 
     gfx.fillRoundRect(10, 72, 108, 34, 4, Color565::rgb(15, 30, 60));
     gfx.drawRoundRect(10, 72, 108, 34, 4, Color565::Cyan);
 
     char hbuf[24];
-    snprintf(hbuf, sizeof(hbuf), "Humidity: %u%%", gPower.getWeatherHumidity());
+    snprintf(hbuf, sizeof(hbuf), "Humidity: %u%%", gPower.getWeatherHumidity(cIdx));
     gfx.drawCenteredText(80, hbuf, Color565::Cyan);
-    gfx.drawCenteredText(93, gSettings.data.idle_random_mode ? "Mode: Random Mix" : "Mode: Sequential", Color565::Lime);
+
+    char locInfo[24];
+    snprintf(locInfo, sizeof(locInfo), "City %d/%d", cIdx + 1, gSettings.data.weather_count);
+    gfx.drawCenteredText(93, locInfo, Color565::Lime);
 
     gfx.drawCenteredText(118, "A/B:VIEW  BOOT:WAKE", Color565::GrayLight);
   }
@@ -516,7 +586,7 @@ public:
       gfx.drawRoundRect(4, 4, 120, 120, 6, Color565::Magenta);
       gfx.drawCenteredText(30, "PHOTO FRAME", Color565::Magenta);
       gfx.drawCenteredText(52, "Upload photos at:", Color565::White);
-      gfx.drawCenteredText(68, "http://mini.local", Color565::NeonCyan);
+      gfx.drawCenteredText(68, "http://lymini.local", Color565::NeonCyan);
       return;
     }
 
@@ -543,7 +613,7 @@ public:
       if (!_videoFile) openCurrentVideo();
       if (_videoFile) {
         uint32_t frameInterval = 1000UL / max((uint8_t)1, _vidFps);
-        if (millis() - _lastVidFrameMs >= frameInterval) {
+        if (_lastVidFrameMs == 0 || (millis() - _lastVidFrameMs >= frameInterval)) {
           _lastVidFrameMs = millis();
 
           uint32_t frameBytes = (_vidFormat == 1) ? (SCREEN_WIDTH * SCREEN_HEIGHT) : (SCREEN_WIDTH * SCREEN_HEIGHT * 2);
@@ -569,13 +639,12 @@ public:
             }
           }
 
-          _vidCurFrame = (_vidCurFrame + 1) % _vidFrameCount;
+          _vidCurFrame = (_vidCurFrame + 1) % max((uint8_t)1, _vidFrameCount);
         }
         return;
       }
     }
 
-    // Fallback procedural animation if all videos are disabled
     static float angle = 0.0f;
     angle += 0.06f;
     gfx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Color565::Black);
@@ -585,18 +654,16 @@ public:
       uint16_t col = (r % 16 == 0) ? Color565::NeonCyan : (r % 24 == 0 ? Color565::Magenta : Color565::Lime);
       gfx.drawCircle(x0, y0, r, col);
     }
-    gfx.drawCenteredText(58, "TV MODE", Color565::White);
+    gfx.drawCenteredText(58, "LYMINI TV", Color565::White);
   }
 
   // 6: About Me & Buy Me a Coffee (PromptPay QR Code)
   void renderAboutQr(DisplayCanvas& gfx) {
     gfx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Color565::rgb(12, 24, 52));
 
-    // Top Header Banner
     gfx.fillRect(0, 0, SCREEN_WIDTH, 14, Color565::rgb(0, 62, 126));
     gfx.drawCenteredText(3, gSettings.data.idle_lock_qr ? "PROMPTPAY (LOCKED)" : "BUY ME A COFFEE", Color565::Gold);
 
-    // Render 112x112 PromptPay QR Code centered at X=8, Y=15
     const int16_t qx = 8;
     const int16_t qy = 15;
     uint16_t* dst = gfx.getBuffer();

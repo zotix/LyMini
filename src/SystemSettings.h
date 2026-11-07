@@ -2,21 +2,29 @@
 #include <Arduino.h>
 #include <Preferences.h>
 
-#define MAX_SAVED_WIFI 3
+#define MAX_SAVED_WIFI     3
+#define MAX_WEATHER_CITIES 5
 
-// Idle screen bitmask flags (7 screens in v0.2.1)
-#define IDLE_MASK_CLOCK    0x01 // 0: Cyber Digital Clock
-#define IDLE_MASK_WEATHER  0x02 // 1: Weather & Temp
-#define IDLE_MASK_PHOTO    0x04 // 2: Photo Frame
-#define IDLE_MASK_VIDEO    0x08 // 3: Video / Animation
-#define IDLE_MASK_ANALOG   0x10 // 4: Analog Clock
-#define IDLE_MASK_FLIP     0x20 // 5: Flip Clock
-#define IDLE_MASK_ABOUT_QR 0x40 // 6: About Me & PromptPay QR
-#define IDLE_MASK_ALL      0x7F
+// Idle screen bitmask flags (8 screens in v0.2.2)
+#define IDLE_MASK_CLOCK       0x01 // 0: Cyber Digital Clock
+#define IDLE_MASK_WEATHER     0x02 // 1: Weather & Temp
+#define IDLE_MASK_PHOTO       0x04 // 2: Photo Frame
+#define IDLE_MASK_VIDEO       0x08 // 3: Video / Animation
+#define IDLE_MASK_ANALOG      0x10 // 4: Analog Clock
+#define IDLE_MASK_FLIP        0x20 // 5: Flip Clock
+#define IDLE_MASK_ABOUT_QR    0x40 // 6: About Me & PromptPay QR (Mandatory, always enabled)
+#define IDLE_MASK_CLK_WEATHER 0x80 // 7: Clock + Weather Combo Screen
+#define IDLE_MASK_ALL         0xFF
 
 struct WifiCredential {
   char ssid[33];
   char pass[65];
+};
+
+struct WeatherLocation {
+  char  name[28];
+  float lat;
+  float lon;
 };
 
 struct SystemSettingsData {
@@ -26,13 +34,18 @@ struct SystemSettingsData {
   char wifi_ssid[33] = "";
   char wifi_pass[65] = "";
 
+  // Multi-location weather list (up to 5 locations)
+  WeatherLocation weather_locs[MAX_WEATHER_CITIES];
+  uint8_t weather_count = 1;
+
   char city_name[33] = "Bangkok";
   float latitude     = 13.7563f;
   float longitude    = 100.5018f;
   int timezone_offset= 7;          // UTC+7 (Thailand)
   
-  uint8_t brightness = 85;         // 10-100%
-  uint8_t screen_rotation = 1;     // 0=0°, 1=90° (Default), 2=180°, 3=270°
+  uint8_t brightness = 85;         // 5-100% Max Brightness ceiling
+  uint8_t screen_rotation = 3;     // 0=0°, 1=90°, 2=180°, 3=270° (Default in v0.2.2)
+  uint8_t btn_rotate_with_screen = 1; // 1=Rotate Left/Right buttons with screen orientation
   uint8_t color_order_bgr = 1;     // 1=BGR (ST7735 GREENTAB3 standard with MSB swap), 0=RGB
 
   uint16_t idle_timeout_sec = 60;  // Default 1 minute
@@ -61,8 +74,15 @@ public:
     data.latitude = 13.7563f;
     data.longitude = 100.5018f;
     data.timezone_offset = 7;
+
+    data.weather_count = 1;
+    strncpy(data.weather_locs[0].name, "Bangkok", sizeof(data.weather_locs[0].name) - 1);
+    data.weather_locs[0].lat = 13.7563f;
+    data.weather_locs[0].lon = 100.5018f;
+
     data.brightness = 85;
-    data.screen_rotation = 1; // Default 90 degrees
+    data.screen_rotation = 3; // Default 270 degrees
+    data.btn_rotate_with_screen = 1;
     data.color_order_bgr = 1;
     data.idle_timeout_sec = 60;
     data.idle_cycle_sec = 12;
@@ -104,17 +124,40 @@ public:
 
       String c = prefs.getString("city", "Bangkok");
       strncpy(data.city_name, c.c_str(), sizeof(data.city_name) - 1);
-      
-      data.latitude          = prefs.getFloat("lat", 13.7563f);
-      data.longitude         = prefs.getFloat("lon", 100.5018f);
-      data.timezone_offset   = prefs.getInt("tz", 7);
-      data.brightness        = prefs.getUChar("bright", 85);
-      data.screen_rotation   = prefs.getUChar("rot", 1); // Default 1 (90 deg)
-      data.color_order_bgr   = prefs.getUChar("bgr", 1);
-      data.idle_timeout_sec  = prefs.getUShort("idletime", 60);
-      data.idle_cycle_sec    = prefs.getUShort("idlecyc", 12);
-      data.idle_enabled_mask = prefs.getUChar("idlemask2", IDLE_MASK_ALL);
-      if (data.idle_enabled_mask == 0) data.idle_enabled_mask = IDLE_MASK_ALL;
+      data.latitude  = prefs.getFloat("lat", 13.7563f);
+      data.longitude = prefs.getFloat("lon", 100.5018f);
+
+      // Load multi-location weather list
+      data.weather_count = prefs.getUChar("wt_cnt", 0);
+      if (data.weather_count > MAX_WEATHER_CITIES) data.weather_count = 0;
+      for (int i = 0; i < data.weather_count; ++i) {
+        char kn[12], klat[12], klon[12];
+        snprintf(kn, sizeof(kn), "wt_n_%d", i);
+        snprintf(klat, sizeof(klat), "wt_la_%d", i);
+        snprintf(klon, sizeof(klon), "wt_lo_%d", i);
+        String wn = prefs.getString(kn, "");
+        strncpy(data.weather_locs[i].name, wn.c_str(), sizeof(data.weather_locs[i].name) - 1);
+        data.weather_locs[i].lat = prefs.getFloat(klat, 13.7563f);
+        data.weather_locs[i].lon = prefs.getFloat(klon, 100.5018f);
+      }
+      if (data.weather_count == 0) {
+        data.weather_count = 1;
+        strncpy(data.weather_locs[0].name, data.city_name, sizeof(data.weather_locs[0].name) - 1);
+        data.weather_locs[0].lat = data.latitude;
+        data.weather_locs[0].lon = data.longitude;
+      }
+
+      data.timezone_offset        = prefs.getInt("tz", 7);
+      data.brightness             = constrain(prefs.getUChar("bright", 85), 5, 100);
+      data.screen_rotation        = prefs.getUChar("rot2", 3); // Default 3 (270 deg in v0.2.2)
+      data.btn_rotate_with_screen = prefs.getUChar("btnrot", 1);
+      data.color_order_bgr        = prefs.getUChar("bgr", 1);
+      data.idle_timeout_sec       = prefs.getUShort("idletime", 60);
+      data.idle_cycle_sec         = prefs.getUShort("idlecyc", 12);
+      data.idle_enabled_mask      = prefs.getUChar("idlemask3", IDLE_MASK_ALL);
+      // PromptPay QR is mandatory and cannot be unchecked
+      data.idle_enabled_mask |= IDLE_MASK_ABOUT_QR;
+
       data.idle_random_mode  = prefs.getUChar("idlernd", 1);
       data.idle_lock_qr      = prefs.getUChar("lockqr", 0);
       data.led_enabled       = prefs.getUChar("led", 1);
@@ -129,6 +172,10 @@ public:
   }
 
   void save() {
+    // Ensure PromptPay QR is always enabled
+    data.idle_enabled_mask |= IDLE_MASK_ABOUT_QR;
+    data.brightness = constrain(data.brightness, 5, 100);
+
     Preferences prefs;
     if (prefs.begin("miniapp_cfg", false)) {
       prefs.putUChar("w_cnt", data.wifi_count);
@@ -146,16 +193,34 @@ public:
         prefs.putString("pass", data.wifi_pass);
       }
 
+      prefs.putUChar("wt_cnt", data.weather_count);
+      for (int i = 0; i < MAX_WEATHER_CITIES; ++i) {
+        char kn[12], klat[12], klon[12];
+        snprintf(kn, sizeof(kn), "wt_n_%d", i);
+        snprintf(klat, sizeof(klat), "wt_la_%d", i);
+        snprintf(klon, sizeof(klon), "wt_lo_%d", i);
+        prefs.putString(kn, data.weather_locs[i].name);
+        prefs.putFloat(klat, data.weather_locs[i].lat);
+        prefs.putFloat(klon, data.weather_locs[i].lon);
+      }
+
+      if (data.weather_count > 0) {
+        strncpy(data.city_name, data.weather_locs[0].name, sizeof(data.city_name) - 1);
+        data.latitude  = data.weather_locs[0].lat;
+        data.longitude = data.weather_locs[0].lon;
+      }
+
       prefs.putString("city", data.city_name);
       prefs.putFloat("lat", data.latitude);
       prefs.putFloat("lon", data.longitude);
       prefs.putInt("tz", data.timezone_offset);
       prefs.putUChar("bright", data.brightness);
-      prefs.putUChar("rot", data.screen_rotation);
+      prefs.putUChar("rot2", data.screen_rotation);
+      prefs.putUChar("btnrot", data.btn_rotate_with_screen);
       prefs.putUChar("bgr", data.color_order_bgr);
       prefs.putUShort("idletime", data.idle_timeout_sec);
       prefs.putUShort("idlecyc", data.idle_cycle_sec);
-      prefs.putUChar("idlemask2", data.idle_enabled_mask);
+      prefs.putUChar("idlemask3", data.idle_enabled_mask);
       prefs.putUChar("idlernd", data.idle_random_mode);
       prefs.putUChar("lockqr", data.idle_lock_qr);
       prefs.putUChar("led", data.led_enabled);
@@ -199,6 +264,43 @@ public:
     }
     memset(&data.wifi_list[data.wifi_count - 1], 0, sizeof(WifiCredential));
     data.wifi_count--;
+    save();
+  }
+
+  int addOrUpdateWeatherCity(const char* name, float lat, float lon) {
+    if (!name || strlen(name) == 0) return -1;
+    for (int i = 0; i < data.weather_count; ++i) {
+      if (strcasecmp(data.weather_locs[i].name, name) == 0) {
+        data.weather_locs[i].lat = lat;
+        data.weather_locs[i].lon = lon;
+        save();
+        return i;
+      }
+    }
+    if (data.weather_count < MAX_WEATHER_CITIES) {
+      int idx = data.weather_count++;
+      memset(&data.weather_locs[idx], 0, sizeof(WeatherLocation));
+      strncpy(data.weather_locs[idx].name, name, sizeof(data.weather_locs[idx].name) - 1);
+      data.weather_locs[idx].lat = lat;
+      data.weather_locs[idx].lon = lon;
+      save();
+      return idx;
+    }
+    // Replace last slot if full
+    int idx = MAX_WEATHER_CITIES - 1;
+    strncpy(data.weather_locs[idx].name, name, sizeof(data.weather_locs[idx].name) - 1);
+    data.weather_locs[idx].lat = lat;
+    data.weather_locs[idx].lon = lon;
+    save();
+    return idx;
+  }
+
+  void removeWeatherCity(int index) {
+    if (index < 0 || index >= data.weather_count || data.weather_count <= 1) return;
+    for (int i = index; i < data.weather_count - 1; ++i) {
+      data.weather_locs[i] = data.weather_locs[i + 1];
+    }
+    data.weather_count--;
     save();
   }
 

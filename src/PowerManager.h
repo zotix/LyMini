@@ -37,17 +37,15 @@ private:
   bool     _usbConnected = true;
   uint8_t  _currentCpuMhz = 160;
   uint8_t  _appliedBrightness = 85;
+  uint32_t _brightnessPreviewUntilMs = 0; // Holds full Max Brightness while adjusting via Web or Menu
 
-  // Weather state (fetched automatically when Wi-Fi STA connects)
-  bool     _hasValidWeather = false;
-  float    _weatherTempC = 0.0f;
-  uint8_t  _weatherHumid = 0;
+  // Multi-location Weather state (fetched automatically when Wi-Fi STA connects)
+  bool     _locValid[MAX_WEATHER_CITIES] = {false};
+  float    _locTempC[MAX_WEATHER_CITIES] = {0.0f};
+  uint8_t  _locHumid[MAX_WEATHER_CITIES] = {0};
   uint32_t _lastWeatherFetchMs = 0;
-  bool     _geocodePending = false;
 
   void detectExternalAdc() {
-    // Check if GPIO 1 (P111) has an external battery divider connected
-    // If unconnected, internal pull-up vs pull-down will swing the pin from ~0 to ~4095
     pinMode(1, INPUT_PULLUP);
     delay(2);
     int vHigh = analogRead(1);
@@ -55,7 +53,6 @@ private:
     delay(2);
     int vLow = analogRead(1);
     pinMode(1, INPUT);
-    // If external low-impedance divider is attached, vHigh and vLow will be close
     if (abs(vHigh - vLow) < 600 && vLow > 800 && vHigh < 3600) {
       _hasExternalAdc = true;
     } else {
@@ -65,7 +62,6 @@ private:
 
   void setCpuSpeed(uint8_t mhz) {
     if (_currentCpuMhz == mhz) return;
-    // ESP32-C3 requires 160MHz while Wi-Fi radio is enabled
     if (_wifiEnabled && mhz < 160) mhz = 160;
     setCpuFrequencyMhz(mhz);
     _currentCpuMhz = mhz;
@@ -75,7 +71,7 @@ public:
   void begin() {
     if (gRtcPwrMagic != RTC_PWR_MAGIC) {
       gRtcPwrMagic = RTC_PWR_MAGIC;
-      gRtcBattPermille = 960; // Start at 96% when first powered
+      gRtcBattPermille = 960;
     }
     if (gRtcBattPermille > 1000) gRtcBattPermille = 1000;
     if (gRtcBattPermille < 50)   gRtcBattPermille = 50;
@@ -102,28 +98,50 @@ public:
   bool isUsbOrCharging() const { return _usbConnected; }
   uint8_t getCpuMhz() const { return _currentCpuMhz; }
 
-  bool hasValidWeather() const { return _hasValidWeather; }
-  float getWeatherTempC() const { return _weatherTempC; }
-  uint8_t getWeatherHumidity() const { return _weatherHumid; }
-
-  void requestWeatherRefresh(bool geocodeCity = false) {
-    _lastWeatherFetchMs = 0;
-    if (geocodeCity) _geocodePending = true;
-    if (!_wifiEnabled) {
-      requestWifiOn();
-    } else if (WiFi.status() == WL_CONNECTED) {
-      fetchWeatherNow();
+  // Apply and preview Max Brightness immediately (even if device is currently in Idle mode!)
+  void applyMaxBrightnessNow(uint8_t maxBri, DisplayCanvas* display) {
+    gSettings.data.brightness = constrain(maxBri, 5, 100);
+    _brightnessPreviewUntilMs = millis() + 25000UL;
+    _appliedBrightness = gSettings.data.brightness;
+    if (display) {
+      display->setBrightness(_appliedBrightness);
     }
   }
 
-  void fetchWeatherNow() {
-    if (!_wifiEnabled || WiFi.status() != WL_CONNECTED) return;
-    _lastWeatherFetchMs = millis();
+  bool hasValidWeather(int idx = -1) const {
+    if (idx >= 0 && idx < gSettings.data.weather_count) {
+      return _locValid[idx];
+    }
+    for (int i = 0; i < gSettings.data.weather_count; ++i) {
+      if (_locValid[i]) return true;
+    }
+    return false;
+  }
 
-    if (_geocodePending && strlen(gSettings.data.city_name) > 0) {
-      _geocodePending = false;
+  float getWeatherTempC(int idx = 0) const {
+    if (idx < 0 || idx >= gSettings.data.weather_count) idx = 0;
+    return _locTempC[idx];
+  }
+
+  uint8_t getWeatherHumidity(int idx = 0) const {
+    if (idx < 0 || idx >= gSettings.data.weather_count) idx = 0;
+    return _locHumid[idx];
+  }
+
+  const char* getWeatherCityName(int idx = 0) const {
+    if (idx < 0 || idx >= gSettings.data.weather_count) idx = 0;
+    return gSettings.data.weather_locs[idx].name;
+  }
+
+  // Geocode a city name via Open-Meteo and add/update it in SystemSettings
+  bool geocodeAndAddCity(const char* cityName) {
+    if (!cityName || strlen(cityName) == 0) return false;
+    float lat = 13.7563f, lon = 100.5018f;
+
+    if (_wifiEnabled && WiFi.status() == WL_CONNECTED) {
       HTTPClient geo;
-      String encodedCity = String(gSettings.data.city_name);
+      String encodedCity = String(cityName);
+      encodedCity.trim();
       encodedCity.replace(" ", "%20");
       String geoUrl = "http://geocoding-api.open-meteo.com/v1/search?name=" + encodedCity + "&count=1&language=en&format=json";
       geo.setTimeout(2500);
@@ -133,20 +151,32 @@ public:
         int latIdx = p.indexOf("\"latitude\":");
         int lonIdx = p.indexOf("\"longitude\":");
         if (latIdx > 0 && lonIdx > 0) {
-          gSettings.data.latitude  = p.substring(latIdx + 11).toFloat();
-          gSettings.data.longitude = p.substring(lonIdx + 12).toFloat();
-          gSettings.save();
+          lat = p.substring(latIdx + 11).toFloat();
+          lon = p.substring(lonIdx + 12).toFloat();
         }
       }
       geo.end();
     }
 
+    int slot = gSettings.addOrUpdateWeatherCity(cityName, lat, lon);
+    if (slot >= 0 && _wifiEnabled && WiFi.status() == WL_CONNECTED) {
+      fetchSingleLocationWeather(slot);
+    } else {
+      _lastWeatherFetchMs = 0;
+    }
+    return (slot >= 0);
+  }
+
+  void fetchSingleLocationWeather(int idx) {
+    if (idx < 0 || idx >= gSettings.data.weather_count) return;
+    if (!_wifiEnabled || WiFi.status() != WL_CONNECTED) return;
+
     HTTPClient http;
     char url[160];
     snprintf(url, sizeof(url),
              "http://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=temperature_2m,relative_humidity_2m",
-             gSettings.data.latitude, gSettings.data.longitude);
-    http.setTimeout(3000);
+             gSettings.data.weather_locs[idx].lat, gSettings.data.weather_locs[idx].lon);
+    http.setTimeout(2500);
     http.begin(url);
     int code = http.GET();
     if (code == HTTP_CODE_OK) {
@@ -156,12 +186,29 @@ public:
       int tempIdx = payload.indexOf("\"temperature_2m\":", searchFrom);
       int humIdx  = payload.indexOf("\"relative_humidity_2m\":", searchFrom);
       if (tempIdx > 0) {
-        _weatherTempC = payload.substring(tempIdx + 17).toFloat();
-        if (humIdx > 0) _weatherHumid = payload.substring(humIdx + 23).toInt();
-        _hasValidWeather = true;
+        _locTempC[idx] = payload.substring(tempIdx + 17).toFloat();
+        if (humIdx > 0) _locHumid[idx] = payload.substring(humIdx + 23).toInt();
+        _locValid[idx] = true;
       }
     }
     http.end();
+  }
+
+  void fetchAllWeatherNow() {
+    if (!_wifiEnabled || WiFi.status() != WL_CONNECTED) return;
+    _lastWeatherFetchMs = millis();
+    for (int i = 0; i < gSettings.data.weather_count; ++i) {
+      fetchSingleLocationWeather(i);
+    }
+  }
+
+  void requestWeatherRefresh() {
+    _lastWeatherFetchMs = 0;
+    if (!_wifiEnabled) {
+      requestWifiOn();
+    } else if (WiFi.status() == WL_CONNECTED) {
+      fetchAllWeatherNow();
+    }
   }
 
   bool isNightScreenOffTime() const {
@@ -177,7 +224,6 @@ public:
     if (st < ed) {
       return (h >= st && h < ed);
     } else {
-      // Crosses midnight (e.g. 23:00 -> 06:00)
       return (h >= st || h < ed);
     }
   }
@@ -208,10 +254,11 @@ public:
       WiFi.mode(WIFI_AP);
     }
 
-    WiFi.softAP("Spotpear-Mini", "12345678");
+    // Open SoftAP "LyMini-AP" with NO password required
+    WiFi.softAP("LyMini-AP");
 
     if (!_mdnsStarted) {
-      if (MDNS.begin("mini")) {
+      if (MDNS.begin("lymini")) {
         MDNS.addService("http", "tcp", 80);
         _mdnsStarted = true;
       }
@@ -240,7 +287,7 @@ public:
     _usbConnected = usb_serial_jtag_is_connected();
 
     if (_hasExternalAdc) {
-      uint32_t mv = analogReadMilliVolts(1) * 2; // Assuming 1:1 divider
+      uint32_t mv = analogReadMilliVolts(1) * 2;
       if (mv >= 4150) _batteryPct = 100;
       else if (mv <= 3300) _batteryPct = 5;
       else _batteryPct = (uint8_t)(((mv - 3300) * 95) / 850 + 5);
@@ -250,7 +297,6 @@ public:
         if (gRtcBattPermille < 1000) gRtcBattPermille += 2;
         if (gRtcBattPermille > 1000) gRtcBattPermille = 1000;
       } else {
-        // Estimate discharge rate based on Wi-Fi & backlight load
         uint16_t drain = _wifiEnabled ? 2 : 1;
         if (gRtcBattPermille > 50 + drain) gRtcBattPermille -= drain;
       }
@@ -279,28 +325,24 @@ public:
 
     // 2.5 Auto Weather Fetch as soon as Wi-Fi STA connects (every 10 mins)
     if (_wifiEnabled && WiFi.status() == WL_CONNECTED) {
-      if (!_hasValidWeather || _lastWeatherFetchMs == 0 || (now - _lastWeatherFetchMs >= 600000UL)) {
+      if (!hasValidWeather() || _lastWeatherFetchMs == 0 || (now - _lastWeatherFetchMs >= 600000UL)) {
         if (_lastWeatherFetchMs == 0 || (now - _lastWeatherFetchMs >= 15000UL)) {
-          fetchWeatherNow();
+          fetchAllWeatherNow();
         }
       }
     }
 
-    // 3. Auto Wi-Fi Power-Off Policy
+    // 3. Auto Wi-Fi Power-Off Policy (Never turns off while Web UI is open & pinging!)
     if (_wifiEnabled) {
       bool apHasClient = (WiFi.softAPgetStationNum() > 0);
       bool recentWebUse = (now - _lastWebActivityMs < WIFI_SEARCH_TIMEOUT_MS);
       uint32_t onDuration = now - _wifiTurnedOnMs;
 
       if (inGame && !apHasClient && (now - _lastWebActivityMs > 15000)) {
-        // Entered a game and nobody is using the web portal:
-        // If time is already synced OR we already tried for 20s, turn off Wi-Fi to save power & boost FPS
-        if ((isTimeSynced() && _hasValidWeather) || onDuration > 25000) {
+        if ((isTimeSynced() && hasValidWeather()) || onDuration > 25000) {
           requestWifiOff();
         }
       } else if (!apHasClient && !recentWebUse && onDuration >= WIFI_SEARCH_TIMEOUT_MS) {
-        // Searching / idle in menu or screensaver for >45s with no web activity:
-        // If Wi-Fi couldn't connect, or if time is synced and nobody opened the web page, turn off Wi-Fi!
         if (WiFi.status() != WL_CONNECTED || inIdle) {
           requestWifiOff();
         }
@@ -311,21 +353,26 @@ public:
     if (_wifiEnabled || inGame) {
       setCpuSpeed(160);
     } else {
-      // Menu or Idle with Wi-Fi OFF -> 80 MHz saves ~35% CPU power
       setCpuSpeed(80);
     }
 
-    // 5. Progressive Backlight Dimming & Night Mode Screen-Off Schedule
-    uint8_t targetBri = gSettings.data.brightness;
-    if (inIdle) {
+    // 5. Max Brightness Ceiling + Progressive Dimming + Night Mode Schedule
+    uint8_t maxBri = constrain(gSettings.data.brightness, 5, 100);
+    uint8_t targetBri = maxBri;
+
+    if (inIdle && now > _brightnessPreviewUntilMs) {
       if (isNightScreenOffTime()) {
-        targetBri = 0; // Turn screen backlight completely OFF during scheduled night hours!
+        targetBri = 0; // Night Mode Screen-Off (0%)
       } else if (idleSec >= 300) {
-        targetBri = min((uint8_t)10, targetBri); // Deep Eco Dim (10%) after 5 mins
+        targetBri = min((uint8_t)10, maxBri); // Deep Eco Dim (never exceeds maxBri)
       } else {
-        targetBri = min((uint8_t)38, targetBri); // Idle Dim (38%) after 1 min
+        targetBri = min((uint8_t)38, maxBri); // Idle Dim (never exceeds maxBri)
       }
     }
+
+    // Strictly guarantee targetBri never exceeds maxBri
+    if (targetBri > maxBri) targetBri = maxBri;
+
     if (targetBri != _appliedBrightness) {
       _appliedBrightness = targetBri;
       display.setBrightness(_appliedBrightness);

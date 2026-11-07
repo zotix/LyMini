@@ -13,8 +13,8 @@ private:
   int8_t _shakeX = 0;
   int8_t _shakeY = 0;
   uint8_t _shakeFrames = 0;
-  uint8_t _rotation = 1; // Default 90°
-  uint8_t _colOffset = 3;
+  uint8_t _rotation = 3; // Default 270°
+  uint8_t _colOffset = 1;
   uint8_t _rowOffset = 2;
   bool    _colorBgr  = true;
 
@@ -98,8 +98,8 @@ public:
 
     writeCommand(0x20); // INVOFF (or 0x21 INVON based on panel)
     
-    // MADCTL Memory Access Control (Default Rotation 1 = 90 deg, BGR)
-    setRotation(1, true);
+    // MADCTL Memory Access Control (Default Rotation 3 = 270 deg, BGR)
+    setRotation(3, true);
 
     writeCommand(0x3A); // COLMOD 16-bit color
     writeData(0x05);

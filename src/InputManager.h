@@ -67,9 +67,17 @@ public:
     }
 
     // Active LOW buttons
-    bool curLeft  = (digitalRead(PIN_BTN_LEFT) == LOW);
-    bool curRight = (digitalRead(PIN_BTN_RIGHT) == LOW);
+    bool rawLeft  = (digitalRead(PIN_BTN_LEFT) == LOW);
+    bool rawRight = (digitalRead(PIN_BTN_RIGHT) == LOW);
     bool curOk    = (digitalRead(PIN_BTN_OK) == LOW);
+
+    // Rotate Left/Right buttons with screen orientation when enabled:
+    // Standard orientation is 270 deg (rot == 3) or 0 deg (rot == 0).
+    // When flipped 180 deg to 90 deg (rot == 1) or 180 deg (rot == 2), swap Left & Right!
+    bool swapLR = (gSettings.data.btn_rotate_with_screen != 0) &&
+                  (gSettings.data.screen_rotation == 1 || gSettings.data.screen_rotation == 2);
+    bool curLeft  = swapLR ? rawRight : rawLeft;
+    bool curRight = swapLR ? rawLeft  : rawRight;
 
     st.leftHeld  = curLeft;
     st.rightHeld = curRight;

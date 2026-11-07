@@ -20,7 +20,7 @@
 #define PIN_BTN_OK    9   // BOOT (B) button (IO9)
 
 // Hold durations
-#define BOOT_HOLD_MENU_EXIT_MS 7000UL // Hold BOOT 7 seconds in-game to return to menu
+#define BOOT_HOLD_MENU_EXIT_MS 4000UL // Hold BOOT 4 seconds in-game to return to menu
 #define BOOT_HOLD_LAUNCHER_MS  1500UL // Hold BOOT 1.5s in menu to enter Idle TV
 
 // Status / Game FX LED

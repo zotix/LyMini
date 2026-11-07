@@ -1,6 +1,6 @@
 // ============================================================================
-// Spotpear ESP32-C3 1.44" ST7735 MiniGames v0.2.1
-// 9-in-1 Arcade + Smart Idle TV + Power Manager + Captive Web Portal
+// LyMini ESP32-C3 1.44" ST7735 MiniGames & Smart Idle TV v0.2.2
+// 9-in-1 Arcade + Smart Idle TV + Power Manager + http://lymini.local
 // ============================================================================
 
 #include <Arduino.h>
@@ -19,7 +19,7 @@
 #include "src/WebPortal.h"
 #include "src/Font5x7.h"
 
-#define APP_VERSION "0.2.1"
+#define APP_VERSION "0.2.2"
 
 // Global System Objects
 SystemSettings gSettings;
@@ -140,9 +140,9 @@ void loop() {
 
   // 4. State Machine Update & Render
   if (gState == STATE_LAUNCHER) {
-    int8_t launchIdx = gLauncher.update(input, dt);
+    int8_t launchIdx = gLauncher.update(input, dt, gDisplay);
     if (launchIdx == LAUNCH_IDLE_TV) {
-      // Held BOOT (1.2s) in Menu -> Enter Idle TV Mode immediately!
+      // Held BOOT (1.5s) in Menu -> Enter Idle TV Mode immediately!
       gPrevState = STATE_LAUNCHER;
       gIdle.init();
       gState = STATE_IDLE;
@@ -159,7 +159,7 @@ void loop() {
     }
 
   } else if (gState == STATE_GAME) {
-    // Hold BOOT for 7 seconds in Game -> Return to Launcher Menu & Turn Wi-Fi ON
+    // Hold BOOT for 4 seconds in Game -> Return to Launcher Menu & Turn Wi-Fi ON
     if (input.menuHold) {
       HighScoreStore::setActiveGameIndex(TOTAL_GAMES); // Menu
       gLauncher.init(gCurrentGameIdx);
@@ -174,7 +174,7 @@ void loop() {
         int16_t bw = (input.okHoldPct * 124) / 100;
         gDisplay.fillRect(0, 118, SCREEN_WIDTH, 10, Color565::Black);
         gDisplay.fillRect(2, 119, bw, 8, Color565::Magenta);
-        gDisplay.drawCenteredText(119, "HOLD 7s: EXIT MENU", Color565::White);
+        gDisplay.drawCenteredText(119, "HOLD 4s: EXIT MENU", Color565::White);
       }
     }
 
