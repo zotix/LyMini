@@ -9,7 +9,7 @@
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non--Commercial-red.svg)](LICENSE)
 [![Platform: ESP32-C3](https://img.shields.io/badge/Platform-ESP32--C3-yellow.svg)](https://www.espressif.com/en/products/socs/esp32-c3)
 [![Framework: Arduino](https://img.shields.io/badge/Framework-Arduino-blue.svg)](https://www.arduino.cc/)
-[![Version: v0.2.3](https://img.shields.io/badge/Version-v0.2.3-green.svg)](https://github.com/zotix/LyMini/releases)
+[![Version: v0.2.4](https://img.shields.io/badge/Version-v0.2.4-green.svg)](https://github.com/zotix/LyMini/releases)
 
 </div>
 

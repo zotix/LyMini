@@ -42,6 +42,18 @@ def save_rgb565(path, buf):
     with open(path, "wb") as f:
         f.write(raw)
 
+def frame_to_rgb565(buf):
+    raw = bytearray(W * H * 2)
+    idx = 0
+    for y in range(H):
+        for x in range(W):
+            r, g, b = buf[y][x]
+            c = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
+            raw[idx] = (c >> 8) & 0xFF
+            raw[idx + 1] = c & 0xFF
+            idx += 2
+    return raw
+
 def frame_to_rgb332(buf):
     raw = bytearray(W * H)
     idx = 0
@@ -154,18 +166,18 @@ if __name__ == "__main__":
         save_rgb565(os.path.join(OUT_DIR, name + ".rgb"), buf)
         save_bmp(os.path.join(OUT_DIR, name + ".bmp"), buf)
 
-    # Generate 2 multi-frame .mvid videos (12 frames, 12 FPS, RGB332)
-    frames = 12
-    hdr = bytes([ord('M'), ord('V'), ord('1'), 1, 128, 128, 12, frames])
+    # Generate 2 multi-frame .mvid videos (8 frames, 10 FPS, HD 16-bit RGB565)
+    frames = 8
+    hdr = bytes([ord('M'), ord('V'), ord('1'), 0, 128, 128, 10, frames])
 
     with open(os.path.join(OUT_DIR, "01_astronaut_spin.mvid"), "wb") as f:
         f.write(hdr)
         for i in range(frames):
-            f.write(frame_to_rgb332(make_astronaut(i * 2 * math.pi / frames)))
+            f.write(frame_to_rgb565(make_astronaut(i * 2 * math.pi / frames)))
 
     with open(os.path.join(OUT_DIR, "02_synthwave_drive.mvid"), "wb") as f:
         f.write(hdr)
         for i in range(frames):
-            f.write(frame_to_rgb332(make_synthwave(i / float(frames))))
+            f.write(frame_to_rgb565(make_synthwave(i / float(frames))))
 
     print("Generated sample photos (.rgb/.bmp) and sample videos (.mvid) in:", OUT_DIR)

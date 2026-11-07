@@ -21,6 +21,7 @@ private:
   File           _uploadFile;
   String         _lastUploadedPath;
   uint32_t       _livePixelIdx = 0;
+  uint8_t        _uploadVidFormat = 0; // 0 = HD 16-bit RGB565 (default), 1 = Compact 8-bit RGB332
   bool           _requestEnterIdle = false;
 
   DisplayCanvas* _display = nullptr;
@@ -345,10 +346,13 @@ public:
       if (!fname.endsWith(".mvid")) fname += ".mvid";
       _lastUploadedPath = "/videos/" + fname;
 
+      uint8_t format = _server.hasArg("format") ? constrain(_server.arg("format").toInt(), 0, 1) : 0; // 0 = HD RGB565 default
+      _uploadVidFormat = format;
       uint8_t frames = _server.hasArg("frames") ? constrain(_server.arg("frames").toInt(), 1, 24) : 10;
       uint8_t fps    = _server.hasArg("fps") ? constrain(_server.arg("fps").toInt(), 4, 24) : 9;
 
-      size_t needed = (size_t)frames * 16384UL + 28672UL;
+      size_t bytesPerFrame = (format == 0) ? (SCREEN_WIDTH * SCREEN_HEIGHT * 2UL) : (SCREEN_WIDTH * SCREEN_HEIGHT);
+      size_t needed = (size_t)frames * bytesPerFrame + 28672UL;
       ensureFreeSpaceForMedia(needed, "/videos");
 
       _uploadFile = LittleFS.open(_lastUploadedPath, "w");
@@ -356,7 +360,7 @@ public:
         _server.send(500, "text/plain", "ERR_OPEN");
         return;
       }
-      uint8_t hdr[8] = { 'M', 'V', '1', 1, 128, 128, fps, frames };
+      uint8_t hdr[8] = { 'M', 'V', '1', format, 128, 128, fps, frames };
       _uploadFile.write(hdr, 8);
       _uploadFile.flush();
       _server.send(200, "text/plain", "OK");
@@ -383,8 +387,14 @@ public:
         }
         if (_display) {
           uint16_t* dst = _display->getBuffer();
-          for (size_t i = 0; i < up.currentSize && _livePixelIdx < (SCREEN_WIDTH * SCREEN_HEIGHT); ++i) {
-            dst[_livePixelIdx++] = expandRgb332(up.buf[i]);
+          if (_uploadVidFormat == 0) {
+            for (size_t i = 0; i + 1 < up.currentSize && _livePixelIdx < (SCREEN_WIDTH * SCREEN_HEIGHT); i += 2) {
+              dst[_livePixelIdx++] = ((uint16_t)up.buf[i] << 8) | up.buf[i + 1];
+            }
+          } else {
+            for (size_t i = 0; i < up.currentSize && _livePixelIdx < (SCREEN_WIDTH * SCREEN_HEIGHT); ++i) {
+              dst[_livePixelIdx++] = expandRgb332(up.buf[i]);
+            }
           }
         }
       }

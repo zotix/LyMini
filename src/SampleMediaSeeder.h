@@ -32,6 +32,19 @@ private:
     f.close();
   }
 
+  static void writeCanvasAsMvidFrame565(DisplayCanvas& gfx, File& f) {
+    uint16_t* buf = gfx.getBuffer();
+    uint8_t lineBuf[SCREEN_WIDTH * 2];
+    for (int y = 0; y < SCREEN_HEIGHT; ++y) {
+      for (int x = 0; x < SCREEN_WIDTH; ++x) {
+        uint16_t c = buf[y * SCREEN_WIDTH + x];
+        lineBuf[x * 2]     = (c >> 8) & 0xFF;
+        lineBuf[x * 2 + 1] = c & 0xFF;
+      }
+      f.write(lineBuf, sizeof(lineBuf));
+    }
+  }
+
   static void writeCanvasAsMvidFrame332(DisplayCanvas& gfx, File& f) {
     uint16_t* buf = gfx.getBuffer();
     uint8_t lineBuf[SCREEN_WIDTH];
@@ -243,9 +256,9 @@ public:
       saveCanvasAsRgb565(gfx, "/photos/04_pixel_cat.rgb");
     }
 
-    // 2. Seed 2 Sample Multi-Frame Videos (.mvid, 12 frames each, 12 FPS, RGB332)
-    const uint8_t frames = 12;
-    const uint8_t hdr[8] = { 'M', 'V', '1', 1, 128, 128, 12, frames };
+    // 2. Seed 2 Sample Multi-Frame Videos (.mvid, 8 frames each, 10 FPS, HD 16-bit RGB565)
+    const uint8_t frames = 8;
+    const uint8_t hdr[8] = { 'M', 'V', '1', 0, 128, 128, 10, frames }; // format 0 = HD RGB565
 
     if (!LittleFS.exists("/videos/01_astronaut_spin.mvid")) {
       File vf = LittleFS.open("/videos/01_astronaut_spin.mvid", "w");
@@ -254,7 +267,7 @@ public:
         for (uint8_t i = 0; i < frames; ++i) {
           float ang = (i * 2.0f * 3.1415926f) / frames;
           drawAstronautFrame(gfx, ang);
-          writeCanvasAsMvidFrame332(gfx, vf);
+          writeCanvasAsMvidFrame565(gfx, vf);
         }
         vf.close();
       }
@@ -267,7 +280,7 @@ public:
         for (uint8_t i = 0; i < frames; ++i) {
           float ph = (float)i / (float)frames;
           drawSynthwaveFrame(gfx, ph);
-          writeCanvasAsMvidFrame332(gfx, vf);
+          writeCanvasAsMvidFrame565(gfx, vf);
         }
         vf.close();
       }

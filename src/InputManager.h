@@ -18,6 +18,7 @@ struct InputState {
   bool menuHold        = false; // OK held for >= holdThresholdMs
   uint8_t  okHoldPct   = 0;     // 0..100% progress toward menuHold
   uint16_t okHoldRemMs = 0;     // Remaining ms until menuHold triggers
+  uint16_t okHeldMs    = 0;     // Milliseconds OK button has been continuously held
   bool anyActivity     = false; // Any button was touched or held
 };
 
@@ -108,6 +109,7 @@ public:
       _okHoldTriggered = false;
     } else if (curOk && !_okHoldTriggered) {
       uint32_t heldMs = now - _okPressStartTime;
+      st.okHeldMs = (heldMs > 65535) ? 65535 : (uint16_t)heldMs;
       if (heldMs > 200) {
         uint32_t p = (heldMs * 100) / holdThresholdMs;
         st.okHoldPct = (p > 100) ? 100 : (uint8_t)p;

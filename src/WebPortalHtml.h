@@ -7,7 +7,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>LyMini Arcade & Smart TV v0.2.3</title>
+<title>LyMini Arcade & Smart TV v0.2.4</title>
 <style>
   :root {
     --bg: #0b0f17;
@@ -97,7 +97,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 <div class="container">
   <div class="topbar">
     <div>
-      <h1>🕹️ LyMini <span class="badge">v0.2.3</span> <span id="connBadge" class="badge online">🟢 Online</span></h1>
+      <h1>🕹️ LyMini <span class="badge">v0.2.4</span> <span id="connBadge" class="badge online">🟢 Online</span></h1>
       <div class="hint" id="statusText">IP: <b>192.168.4.1</b> | <b>http://lymini.local</b></div>
     </div>
     <div style="display:flex; gap:6px; align-items:center;">
@@ -138,6 +138,25 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
             <input type="checkbox" id="chkAutoLive" checked />
             <span data-i18n="st_autolive">👁️ Live View บนจอ LyMini อัตโนมัติ ขณะลาก/ปรับแต่ง</span>
           </div>
+        </div>
+        <div class="row" style="width:100%; margin-top:8px; gap:8px;">
+          <label class="chk-item" style="flex:1; margin:0; padding:6px 8px; font-size:12px;">
+            <input type="checkbox" id="chkSharpen" checked />
+            <span data-i18n="st_sharpen">✨ เร่งความคมชัดภาพ</span>
+          </label>
+          <label class="chk-item" style="flex:1; margin:0; padding:6px 8px; font-size:12px;">
+            <input type="checkbox" id="chkVibrant" checked />
+            <span data-i18n="st_vibrant">🎨 สีสดใสพิเศษ (LCD)</span>
+          </label>
+        </div>
+        <div class="chk-item" style="width:100%; margin-top:8px;">
+          <div class="chk-left">
+            <span style="font-size:12px; font-weight:600; color:var(--text-muted);" data-i18n="st_quality_lbl">คุณภาพวิดีโอ:</span>
+          </div>
+          <select id="selVidQuality" style="padding:4px 8px; background:var(--surface); color:#fff; border:1px solid var(--border); border-radius:6px; font-size:12px;">
+            <option value="0" selected data-i18n="st_q_hd">🌟 HD 16-bit (65,536 สี คมชัดสูงสุด)</option>
+            <option value="1" data-i18n="st_q_compact">⚡ Compact 8-bit (ประหยัดพื้นที่)</option>
+          </select>
         </div>
         <div class="row" style="width:100%;">
           <button type="button" class="purple" id="btnLiveNow" data-i18n="st_btn_live">👁️ ส่งขึ้นจอทันที</button>
@@ -370,6 +389,11 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       st_rot: 'หมุน 90°',
       st_reset: 'รีเซ็ต',
       st_autolive: '👁️ Live View บนจอ LyMini อัตโนมัติ ขณะลาก/ปรับแต่ง',
+      st_sharpen: '✨ เร่งความคมชัดภาพ (Edge Sharpening)',
+      st_vibrant: '🎨 สีสดใสพิเศษ (Vibrant LCD Boost)',
+      st_quality_lbl: 'คุณภาพวิดีโอ:',
+      st_q_hd: '🌟 HD 16-bit (65,536 สี - คมชัดสูงสุด)',
+      st_q_compact: '⚡ Compact 8-bit (ประหยัดพื้นที่)',
       st_btn_live: '👁️ ส่งขึ้นจอทันที',
       st_btn_save: '🚀 บันทึกลงเครื่อง & เล่นทันที',
       id_title: '🎲 ตั้งค่าโหมดพักหน้าจอ (Smart Idle & Live Preview)',
@@ -430,6 +454,11 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       st_rot: 'Rotate 90°',
       st_reset: 'Reset',
       st_autolive: '👁️ Auto Live View on LyMini while editing',
+      st_sharpen: '✨ Edge Sharpening',
+      st_vibrant: '🎨 Vibrant LCD Color Boost',
+      st_quality_lbl: 'Video Quality:',
+      st_q_hd: '🌟 HD 16-bit (65,536 colors - Crisp)',
+      st_q_compact: '⚡ Compact 8-bit (Space Saver)',
       st_btn_live: '👁️ Push to Screen Now',
       st_btn_save: '🚀 Save to Flash & Play',
       id_title: '🎲 Smart Idle Display & Live Preview',
@@ -648,8 +677,40 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
   }
   drawPlaceholder();
 
+  function getSteppedCanvas(source) {
+    let curW = source.naturalWidth || source.videoWidth || source.width;
+    let curH = source.naturalHeight || source.videoHeight || source.height;
+    if (!curW || !curH || (curW <= 256 && curH <= 256)) return source;
+
+    let srcCanvas = document.createElement('canvas');
+    srcCanvas.width = curW;
+    srcCanvas.height = curH;
+    let sctx = srcCanvas.getContext('2d');
+    sctx.drawImage(source, 0, 0);
+
+    while (curW > 256 || curH > 256) {
+      const nextW = Math.max(256, Math.floor(curW / 2));
+      const nextH = Math.max(256, Math.floor(curH / 2));
+      const stepCanvas = document.createElement('canvas');
+      stepCanvas.width = nextW;
+      stepCanvas.height = nextH;
+      const stepCtx = stepCanvas.getContext('2d');
+      stepCtx.imageSmoothingEnabled = true;
+      stepCtx.imageSmoothingQuality = 'high';
+      stepCtx.drawImage(srcCanvas, 0, 0, nextW, nextH);
+      srcCanvas = stepCanvas;
+      curW = nextW;
+      curH = nextH;
+    }
+    return srcCanvas;
+  }
+
   function renderSourceToCanvas(source, sw, sh) {
     if (!sw || !sh) return;
+    const vibrant = document.getElementById('chkVibrant') ? document.getElementById('chkVibrant').checked : true;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.filter = vibrant ? 'contrast(1.10) saturate(1.20)' : 'none';
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, 128, 128);
     ctx.save();
@@ -662,6 +723,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     else { dw = 128; dh = 128 / aspect; }
     ctx.drawImage(source, -dw / 2, -dh / 2, dw, dh);
     ctx.restore();
+    ctx.filter = 'none';
   }
 
   function renderCanvas() {
@@ -722,7 +784,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
-        currentImg = img;
+        currentImg = getSteppedCanvas(img);
         renderCanvas();
         uploadMsg.innerText = (curLang === 'th') ? '🖼️ โหลดรูปสำเร็จ! ลากจัดตำแหน่งได้เลย' : '🖼️ Image ready!';
       };
@@ -777,24 +839,137 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
   document.getElementById('btnZoomOut').onclick = () => { zoom /= 1.15; renderCanvas(); };
   document.getElementById('btnRotate').onclick = () => { rotation = (rotation + 90) % 360; renderCanvas(); };
   document.getElementById('btnResetCrop').onclick = () => { zoom = 1.0; rotation = 0; panX = 0; panY = 0; renderCanvas(); };
+  const chkSharpenEl = document.getElementById('chkSharpen');
+  const chkVibrantEl = document.getElementById('chkVibrant');
+  if (chkSharpenEl) chkSharpenEl.onchange = renderCanvas;
+  if (chkVibrantEl) chkVibrantEl.onchange = renderCanvas;
+
+  function applyEdgeSharpen(d) {
+    const copy = new Uint8ClampedArray(d);
+    const amount = 0.45;
+    for (let y = 1; y < 127; ++y) {
+      for (let x = 1; x < 127; ++x) {
+        const idx = (y * 128 + x) * 4;
+        for (let c = 0; c < 3; ++c) {
+          const val = copy[idx + c];
+          const blur = (copy[((y - 1) * 128 + x) * 4 + c] +
+                        copy[((y + 1) * 128 + x) * 4 + c] +
+                        copy[(y * 128 + (x - 1)) * 4 + c] +
+                        copy[(y * 128 + (x + 1)) * 4 + c]) * 0.25;
+          const res = val + amount * (val - blur);
+          d[idx + c] = Math.min(255, Math.max(0, Math.round(res)));
+        }
+      }
+    }
+  }
 
   function canvasToRgb332() {
-    const d = ctx.getImageData(0, 0, 128, 128).data;
+    const imgData = ctx.getImageData(0, 0, 128, 128);
+    const d = imgData.data;
+    const rBuf = new Float32Array(128 * 128);
+    const gBuf = new Float32Array(128 * 128);
+    const bBuf = new Float32Array(128 * 128);
+    for (let i = 0, j = 0; i < d.length; i += 4, ++j) {
+      rBuf[j] = d[i]; gBuf[j] = d[i + 1]; bBuf[j] = d[i + 2];
+    }
     const out = new Uint8Array(128 * 128);
-    for (let i = 0, j = 0; i < d.length; i += 4, j++) {
-      out[j] = (d[i] & 0xE0) | ((d[i + 1] & 0xE0) >> 3) | (d[i + 2] >> 6);
+    let outIdx = 0;
+    for (let y = 0; y < 128; ++y) {
+      for (let x = 0; x < 128; ++x) {
+        const p = y * 128 + x;
+        const curR = Math.min(255, Math.max(0, rBuf[p]));
+        const curG = Math.min(255, Math.max(0, gBuf[p]));
+        const curB = Math.min(255, Math.max(0, bBuf[p]));
+
+        const r3 = Math.min(7, Math.max(0, Math.round(curR * 7 / 255)));
+        const g3 = Math.min(7, Math.max(0, Math.round(curG * 7 / 255)));
+        const b2 = Math.min(3, Math.max(0, Math.round(curB * 3 / 255)));
+
+        const qR = (r3 * 255 + 3) / 7;
+        const qG = (g3 * 255 + 3) / 7;
+        const qB = (b2 * 255 + 1) / 3;
+
+        const errR = curR - qR;
+        const errG = curG - qG;
+        const errB = curB - qB;
+
+        if (x + 1 < 128) {
+          const n1 = p + 1;
+          rBuf[n1] += errR * 0.4375; gBuf[n1] += errG * 0.4375; bBuf[n1] += errB * 0.4375;
+        }
+        if (y + 1 < 128) {
+          if (x > 0) {
+            const n2 = p + 128 - 1;
+            rBuf[n2] += errR * 0.1875; gBuf[n2] += errG * 0.1875; bBuf[n2] += errB * 0.1875;
+          }
+          const n3 = p + 128;
+          rBuf[n3] += errR * 0.3125; gBuf[n3] += errG * 0.3125; bBuf[n3] += errB * 0.3125;
+          if (x + 1 < 128) {
+            const n4 = p + 128 + 1;
+            rBuf[n4] += errR * 0.0625; gBuf[n4] += errG * 0.0625; bBuf[n4] += errB * 0.0625;
+          }
+        }
+        out[outIdx++] = (r3 << 5) | (g3 << 2) | b2;
+      }
     }
     return out;
   }
 
   function canvasToRgb565() {
-    const d = ctx.getImageData(0, 0, 128, 128).data;
+    const imgData = ctx.getImageData(0, 0, 128, 128);
+    const d = imgData.data;
+    const sharpen = document.getElementById('chkSharpen') ? document.getElementById('chkSharpen').checked : true;
+    if (sharpen) applyEdgeSharpen(d);
+
+    const rBuf = new Float32Array(128 * 128);
+    const gBuf = new Float32Array(128 * 128);
+    const bBuf = new Float32Array(128 * 128);
+    for (let i = 0, j = 0; i < d.length; i += 4, ++j) {
+      rBuf[j] = d[i]; gBuf[j] = d[i + 1]; bBuf[j] = d[i + 2];
+    }
+
     const out = new Uint8Array(128 * 128 * 2);
-    let idx = 0;
-    for (let i = 0; i < d.length; i += 4) {
-      const c = ((d[i] & 0xF8) << 8) | ((d[i + 1] & 0xFC) << 3) | (d[i + 2] >> 3);
-      out[idx++] = (c >> 8) & 0xFF;
-      out[idx++] = c & 0xFF;
+    let outIdx = 0;
+    for (let y = 0; y < 128; ++y) {
+      for (let x = 0; x < 128; ++x) {
+        const p = y * 128 + x;
+        const curR = Math.min(255, Math.max(0, rBuf[p]));
+        const curG = Math.min(255, Math.max(0, gBuf[p]));
+        const curB = Math.min(255, Math.max(0, bBuf[p]));
+
+        const r5 = Math.min(31, Math.max(0, Math.round(curR * 31 / 255)));
+        const g6 = Math.min(63, Math.max(0, Math.round(curG * 63 / 255)));
+        const b5 = Math.min(31, Math.max(0, Math.round(curB * 31 / 255)));
+
+        const qR = (r5 * 255 + 15) / 31;
+        const qG = (g6 * 255 + 31) / 63;
+        const qB = (b5 * 255 + 15) / 31;
+
+        const errR = curR - qR;
+        const errG = curG - qG;
+        const errB = curB - qB;
+
+        if (x + 1 < 128) {
+          const n1 = p + 1;
+          rBuf[n1] += errR * 0.4375; gBuf[n1] += errG * 0.4375; bBuf[n1] += errB * 0.4375;
+        }
+        if (y + 1 < 128) {
+          if (x > 0) {
+            const n2 = p + 128 - 1;
+            rBuf[n2] += errR * 0.1875; gBuf[n2] += errG * 0.1875; bBuf[n2] += errB * 0.1875;
+          }
+          const n3 = p + 128;
+          rBuf[n3] += errR * 0.3125; gBuf[n3] += errG * 0.3125; bBuf[n3] += errB * 0.3125;
+          if (x + 1 < 128) {
+            const n4 = p + 128 + 1;
+            rBuf[n4] += errR * 0.0625; gBuf[n4] += errG * 0.0625; bBuf[n4] += errB * 0.0625;
+          }
+        }
+
+        const rgb565 = (r5 << 11) | (g6 << 5) | b5;
+        out[outIdx++] = (rgb565 >> 8) & 0xFF;
+        out[outIdx++] = rgb565 & 0xFF;
+      }
     }
     return out;
   }
@@ -884,17 +1059,19 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
           throw new Error('Upload failed');
         }
       } else if (mediaType === 'video') {
-        const frames = 10;
+        const qualityEl = document.getElementById('selVidQuality');
+        const vidFormat = qualityEl ? parseInt(qualityEl.value, 10) : 0; // 0 = HD 16-bit RGB565 (default), 1 = Compact 8-bit RGB332
+        const frames = (vidFormat === 0) ? 10 : 12;
         const fps = 9;
         const fname = 'vid_' + (Date.now() % 100000) + '.mvid';
 
         showBusyModal(
-          (curLang === 'th') ? '🎬 กำลังประมวลผลและบันทึกวิดีโอ...' : '🎬 Converting & Saving Video...',
+          (curLang === 'th') ? '🎬 กำลังประมวลผลวิดีโอ HD (16-bit)...' : '🎬 Processing HD Video (16-bit)...',
           (curLang === 'th') ? 'กำลังเตรียมพื้นที่จัดเก็บในบอร์ด...' : 'Initializing video file on board...',
           8
         );
 
-        const initRes = await fetch(`/api/upload_init?name=${encodeURIComponent(fname)}&frames=${frames}&fps=${fps}`, { method: 'POST' });
+        const initRes = await fetch(`/api/upload_init?name=${encodeURIComponent(fname)}&frames=${frames}&fps=${fps}&format=${vidFormat}`, { method: 'POST' });
         if (!initRes.ok) throw new Error('Init failed');
 
         // Ensure video is playing so frames advance naturally on iOS/Android/PC
@@ -907,8 +1084,10 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
         for (let f = 0; f < frames; f++) {
           const pct = 10 + Math.round(((f + 1) / frames) * 82);
           showBusyModal(
-            (curLang === 'th') ? '🎬 กำลังประมวลผลและบันทึกวิดีโอ...' : '🎬 Saving Video to LyMini...',
-            (curLang === 'th') ? `กำลังสกัดและบันทึกเฟรมที่ ${f + 1} / ${frames}...` : `Capturing & saving frame ${f + 1} / ${frames}...`,
+            (curLang === 'th') ? '🎬 กำลังประมวลผลและบันทึกวิดีโอ HD...' : '🎬 Saving HD Video to LyMini...',
+            (curLang === 'th')
+              ? `กำลังสกัดเฟรมที่ ${f + 1} / ${frames} (${vidFormat === 0 ? '16-bit RGB565 คมชัดสูง' : '8-bit RGB332'})...`
+              : `Capturing frame ${f + 1} / ${frames} (${vidFormat === 0 ? '16-bit HD' : '8-bit'})...`,
             pct
           );
 
@@ -918,7 +1097,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
           await new Promise(r => setTimeout(r, stepMs));
 
           renderSourceToCanvas(srcVideo, srcVideo.videoWidth || 128, srcVideo.videoHeight || 128);
-          const fbuf = canvasToRgb332();
+          const fbuf = (vidFormat === 0) ? canvasToRgb565() : canvasToRgb332();
           const fd = new FormData();
           fd.append('frame', new Blob([fbuf], { type: 'application/octet-stream' }), `f${f}.bin`);
           const fRes = await fetch(`/api/upload_frame?idx=${f}`, { method: 'POST', body: fd });
@@ -935,7 +1114,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 
         showBusyModal(
           (curLang === 'th') ? '✅ บันทึกวิดีโอสำเร็จ!' : '✅ Video Saved!',
-          (curLang === 'th') ? 'กำลังเล่นวิดีโอเคลื่อนไหวบนจอ LyMini' : 'Playing animated video on LyMini!',
+          (curLang === 'th') ? 'กำลังเล่นวิดีโอระดับ HD 16-bit บนจอ LyMini' : 'Playing HD 16-bit video on LyMini!',
           100
         );
 

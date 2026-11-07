@@ -1,5 +1,5 @@
 // ============================================================================
-// LyMini ESP32-C3 1.44" ST7735 MiniGames & Smart Idle TV v0.2.3
+// LyMini ESP32-C3 1.44" ST7735 MiniGames & Smart Idle TV v0.2.4
 // 9-in-1 Arcade + Smart Idle TV + Power Manager + http://lymini.local
 // ============================================================================
 
@@ -19,7 +19,7 @@
 #include "src/WebPortal.h"
 #include "src/Font5x7.h"
 
-#define APP_VERSION "0.2.3"
+#define APP_VERSION "0.2.4"
 
 // Global System Objects
 SystemSettings gSettings;
@@ -157,8 +157,10 @@ void loop() {
       IGame* game = gRegistry.getGame(gCurrentGameIdx);
       game->update(input, dt);
       game->render(gDisplay);
-      if (input.okHoldPct > 0) {
-        int16_t bw = (input.okHoldPct * 124) / 100;
+      // Show EXIT MENU countdown banner only after holding for >= 2.5 seconds (2500 ms)
+      if (input.okHeldMs >= 2500 && input.okHoldRemMs > 0) {
+        int16_t bw = ((input.okHeldMs - 2500) * 124) / 1500;
+        if (bw > 124) bw = 124;
         gDisplay.fillRect(0, 118, SCREEN_WIDTH, 10, Color565::Black);
         gDisplay.fillRect(2, 119, bw, 8, Color565::Magenta);
         char hbuf[24];
