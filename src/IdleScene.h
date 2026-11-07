@@ -3,23 +3,28 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <time.h>
+#include <math.h>
 #include <LittleFS.h>
 #include "DisplayCanvas.h"
 #include "InputManager.h"
 #include "SystemSettings.h"
 #include "PowerManager.h"
+#include "PromptPayQrAsset.h"
 
 class IdleScene {
 private:
-  uint8_t  _currentScreen; // 0: Clock, 1: Weather, 2: Photo, 3: Video
+  // Screens (0..6):
+  // 0: Cyber Digital Clock
+  // 1: Weather & Temp
+  // 2: Photo Frame
+  // 3: Video / TV Animation
+  // 4: Analog Clock
+  // 5: Flip Clock
+  // 6: About Me & PromptPay QR
+  uint8_t  _currentScreen;
   uint32_t _screenTimer;
   uint32_t _liveHoldUntilMs;
   bool     _liveBufferActive;
-
-  // Weather state
-  float    _tempC;
-  uint8_t  _humidity;
-  uint32_t _lastWeatherFetch;
 
   // Photo list (/photos/*.rgb)
   char     _photoFiles[16][40];
@@ -50,35 +55,67 @@ private:
     return (r5 << 11) | (g6 << 5) | b5;
   }
 
-  bool isScreenEnabled(uint8_t scr) const {
+  bool isScreenEligible(uint8_t scr) const {
     uint8_t mask = gSettings.data.idle_enabled_mask;
     if (mask == 0) mask = IDLE_MASK_ALL;
-    return (mask & (1 << scr)) != 0;
+    if ((mask & (1 << scr)) == 0) return false;
+
+    // Requirement: If no NTP time synced, do NOT show any Clock screens (0: Digital, 4: Analog, 5: Flip)
+    if ((scr == 0 || scr == 4 || scr == 5) && !gPower.isTimeSynced()) {
+      return false;
+    }
+
+    // Requirement: If no valid Weather data, do NOT show Weather screen (1)
+    if (scr == 1 && !gPower.hasValidWeather()) {
+      return false;
+    }
+
+    return true;
   }
 
   void pickNextScreen(int8_t dir = 1) {
     _liveBufferActive = false;
     _photoLoaded = false;
 
-    uint8_t enabledList[4];
-    uint8_t cnt = 0;
-    for (uint8_t i = 0; i < 4; ++i) {
-      if (isScreenEnabled(i)) enabledList[cnt++] = i;
-    }
-    if (cnt == 0) {
-      _currentScreen = 0;
+    // If user locked Idle on PromptPay QR code, stay on screen 6!
+    if (gSettings.data.idle_lock_qr) {
+      _currentScreen = 6;
       return;
     }
 
-    if (gSettings.data.idle_random_mode && dir == 0) {
+    uint8_t enabledList[7];
+    uint8_t cnt = 0;
+    for (uint8_t i = 0; i < 7; ++i) {
+      if (isScreenEligible(i)) enabledList[cnt++] = i;
+    }
+
+    // Fallback if all selected screens were filtered out (e.g. only clocks/weather enabled without Wi-Fi)
+    if (cnt == 0) {
+      if (_photoCount > 0) {
+        enabledList[cnt++] = 2;
+      }
+      if (_videoCount > 0) {
+        enabledList[cnt++] = 3;
+      }
+      if (cnt == 0) {
+        enabledList[cnt++] = 6; // About & PromptPay QR
+      }
+    }
+
+    if (gSettings.data.idle_random_mode && dir == 0 && cnt > 1) {
       _currentScreen = enabledList[random(0, cnt)];
     } else {
-      int curPos = 0;
+      int curPos = -1;
       for (uint8_t i = 0; i < cnt; ++i) {
         if (enabledList[i] == _currentScreen) { curPos = i; break; }
       }
-      curPos = (curPos + dir + cnt) % cnt;
-      _currentScreen = enabledList[curPos];
+      if (curPos < 0) {
+        _currentScreen = enabledList[0];
+      } else {
+        int step = (dir == 0) ? 1 : dir;
+        curPos = (curPos + step + cnt) % cnt;
+        _currentScreen = enabledList[curPos];
+      }
     }
 
     if (_currentScreen == 2 && _photoCount > 0) {
@@ -121,8 +158,7 @@ private:
   }
 
 public:
-  IdleScene() : _currentScreen(0), _screenTimer(0), _liveHoldUntilMs(0), _liveBufferActive(false),
-                _tempC(28.5f), _humidity(65), _lastWeatherFetch(0),
+  IdleScene() : _currentScreen(2), _screenTimer(0), _liveHoldUntilMs(0), _liveBufferActive(false),
                 _photoCount(0), _curPhotoIdx(0), _photoLoaded(false),
                 _videoCount(0), _curVideoIdx(0), _vidFormat(1), _vidFps(12),
                 _vidFrameCount(1), _vidCurFrame(0), _lastVidFrameMs(0) {}
@@ -137,6 +173,8 @@ public:
       File file = pdir.openNextFile();
       while (file && _photoCount < 16) {
         String name = file.name();
+        int slash = name.lastIndexOf('/');
+        if (slash >= 0) name = name.substring(slash + 1);
         if (!file.isDirectory() && name.endsWith(".rgb") && gSettings.isMediaEnabled(name.c_str())) {
           snprintf(_photoFiles[_photoCount], sizeof(_photoFiles[0]), "/photos/%s", name.c_str());
           _photoCount++;
@@ -150,6 +188,8 @@ public:
       File file = vdir.openNextFile();
       while (file && _videoCount < 10) {
         String name = file.name();
+        int slash = name.lastIndexOf('/');
+        if (slash >= 0) name = name.substring(slash + 1);
         if (!file.isDirectory() && name.endsWith(".mvid") && gSettings.isMediaEnabled(name.c_str())) {
           snprintf(_videoFiles[_videoCount], sizeof(_videoFiles[0]), "/videos/%s", name.c_str());
           _videoCount++;
@@ -167,8 +207,14 @@ public:
     _liveBufferActive = false;
     _photoLoaded = false;
     scanMediaFiles();
-    fetchWeatherIfNeeded();
     pickNextScreen(0);
+  }
+
+  void showPromptPayQrNow() {
+    _screenTimer = millis();
+    _liveHoldUntilMs = millis() + 30000UL;
+    _liveBufferActive = false;
+    _currentScreen = 6;
   }
 
   // Triggered from Web Portal "Show on ESP" button
@@ -181,7 +227,6 @@ public:
 
     String p(fullPath);
     if (p.endsWith(".rgb")) {
-      // Ensure it is in slot 0 or find it
       int found = -1;
       for (int i = 0; i < _photoCount; ++i) {
         if (strcmp(_photoFiles[i], fullPath) == 0) { found = i; break; }
@@ -219,36 +264,22 @@ public:
     _screenTimer = millis();
   }
 
-  void fetchWeatherIfNeeded() {
-    if (!gPower.isWifiEnabled() || WiFi.status() != WL_CONNECTED) return;
-    if (_lastWeatherFetch > 0 && millis() - _lastWeatherFetch < 600000UL) return;
-
-    _lastWeatherFetch = millis();
-    HTTPClient http;
-    char url[140];
-    snprintf(url, sizeof(url),
-             "http://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=temperature_2m,relative_humidity_2m",
-             gSettings.data.latitude, gSettings.data.longitude);
-
-    http.setTimeout(2500);
-    http.begin(url);
-    int code = http.GET();
-    if (code == HTTP_CODE_OK) {
-      String payload = http.getString();
-      int tempIdx = payload.indexOf("\"temperature_2m\":");
-      if (tempIdx > 0) _tempC = payload.substring(tempIdx + 17).toFloat();
-      int humIdx = payload.indexOf("\"relative_humidity_2m\":");
-      if (humIdx > 0) _humidity = payload.substring(humIdx + 23).toInt();
-    }
-    http.end();
-  }
-
   // Returns true if user pressed BOOT to wake up back to Menu/Game
   bool update(const InputState& input, float dt) {
     if (input.okShortReleased || input.menuHold) {
       if (_videoFile) _videoFile.close();
       _liveBufferActive = false;
       return true;
+    }
+
+    if (gSettings.data.idle_lock_qr && !_liveBufferActive) {
+      _currentScreen = 6;
+      return false;
+    }
+
+    // If current screen became ineligible (e.g. toggled off in web settings), switch immediately
+    if (!_liveBufferActive && !isScreenEligible(_currentScreen) && millis() > _liveHoldUntilMs) {
+      pickNextScreen(0);
     }
 
     // Manual Left / Right switching between Idle screens or photos/videos
@@ -267,7 +298,6 @@ public:
       pickNextScreen(0);
     }
 
-    fetchWeatherIfNeeded();
     return false;
   }
 
@@ -278,17 +308,19 @@ public:
     }
     _liveBufferActive = false;
 
-    if (_currentScreen == 0) {
-      renderClock(gfx);
-    } else if (_currentScreen == 1) {
-      renderWeather(gfx);
-    } else if (_currentScreen == 2) {
-      renderPhoto(gfx);
-    } else {
-      renderVideo(gfx);
+    switch (_currentScreen) {
+      case 0: renderClock(gfx);       break;
+      case 1: renderWeather(gfx);     break;
+      case 2: renderPhoto(gfx);       break;
+      case 3: renderVideo(gfx);       break;
+      case 4: renderAnalogClock(gfx); break;
+      case 5: renderFlipClock(gfx);   break;
+      case 6: renderAboutQr(gfx);     break;
+      default: renderPhoto(gfx);      break;
     }
   }
 
+  // 0: Cyber Digital Clock
   void renderClock(DisplayCanvas& gfx) {
     gfx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Color565::rgb(10, 12, 24));
 
@@ -297,22 +329,17 @@ public:
     gfx.drawFastHLine(0, 15, SCREEN_WIDTH, Color565::NeonCyan);
     gfx.drawCenteredText(4, "CYBER CLOCK", Color565::Cyan);
 
+    time_t now = time(nullptr);
+    struct tm timeinfo;
+    localtime_r(&now, &timeinfo);
+
     char timeStr[16];
     char dateStr[24];
-    if (gPower.isTimeSynced()) {
-      time_t now = time(nullptr);
-      struct tm timeinfo;
-      localtime_r(&now, &timeinfo);
-      snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
-      const char* months[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
-      const char* days[]   = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
-      snprintf(dateStr, sizeof(dateStr), "%s, %d %s %d",
-               days[timeinfo.tm_wday % 7], timeinfo.tm_mday, months[timeinfo.tm_mon % 12], timeinfo.tm_year + 1900);
-    } else {
-      uint32_t s = millis() / 1000;
-      snprintf(timeStr, sizeof(timeStr), "%02lu:%02lu:%02lu", (s / 3600) % 24, (s / 60) % 60, s % 60);
-      snprintf(dateStr, sizeof(dateStr), "Syncing via Wi-Fi...");
-    }
+    snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+    const char* months[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    const char* days[]   = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+    snprintf(dateStr, sizeof(dateStr), "%s, %d %s %d",
+             days[timeinfo.tm_wday % 7], timeinfo.tm_mday, months[timeinfo.tm_mon % 12], timeinfo.tm_year + 1900);
 
     // Big Digital Clock Card
     gfx.fillRoundRect(8, 26, 112, 34, 4, Color565::rgb(20, 26, 48));
@@ -336,34 +363,153 @@ public:
     }
 
     gfx.drawFastHLine(0, 114, SCREEN_WIDTH, Color565::Navy);
-    gfx.drawCenteredText(118, "<-/->:VIEW  BOOT:WAKE", Color565::GrayMid);
+    gfx.drawCenteredText(118, "A/B:VIEW  BOOT:WAKE", Color565::GrayMid);
   }
 
+  // 4: Analog Clock
+  void renderAnalogClock(DisplayCanvas& gfx) {
+    gfx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Color565::rgb(8, 12, 22));
+
+    const int16_t cx = 64;
+    const int16_t cy = 56;
+    const int16_t r  = 46;
+
+    // Outer Bezel & Dial
+    gfx.fillCircle(cx, cy, r + 3, Color565::rgb(25, 38, 68));
+    gfx.fillCircle(cx, cy, r, Color565::rgb(14, 20, 36));
+    gfx.drawCircle(cx, cy, r + 3, Color565::NeonCyan);
+    gfx.drawCircle(cx, cy, r, Color565::Gold);
+
+    // 12 Hour Tick Marks
+    for (int i = 0; i < 12; ++i) {
+      float ang = (i * 30.0f - 90.0f) * 0.01745329f;
+      int16_t x0 = cx + (int16_t)(cosf(ang) * (r - (i % 3 == 0 ? 7 : 4)));
+      int16_t y0 = cy + (int16_t)(sinf(ang) * (r - (i % 3 == 0 ? 7 : 4)));
+      int16_t x1 = cx + (int16_t)(cosf(ang) * (r - 2));
+      int16_t y1 = cy + (int16_t)(sinf(ang) * (r - 2));
+      gfx.drawLine(x0, y0, x1, y1, (i % 3 == 0) ? Color565::Gold : Color565::GrayLight);
+    }
+
+    gfx.drawText(cx - 5, cy - r + 9, "12", Color565::NeonCyan);
+    gfx.drawText(cx + r - 13, cy - 3, "3", Color565::NeonCyan);
+    gfx.drawText(cx - 2, cy + r - 14, "6", Color565::NeonCyan);
+    gfx.drawText(cx - r + 9, cy - 3, "9", Color565::NeonCyan);
+
+    time_t now = time(nullptr);
+    struct tm ti;
+    localtime_r(&now, &ti);
+
+    // Hour Hand
+    float hAngle = ((ti.tm_hour % 12) * 30.0f + ti.tm_min * 0.5f - 90.0f) * 0.01745329f;
+    int16_t hx = cx + (int16_t)(cosf(hAngle) * 23);
+    int16_t hy = cy + (int16_t)(sinf(hAngle) * 23);
+    gfx.drawLine(cx, cy, hx, hy, Color565::White);
+    gfx.drawLine(cx + 1, cy, hx + 1, hy, Color565::White);
+    gfx.drawLine(cx, cy + 1, hx, hy + 1, Color565::White);
+
+    // Minute Hand
+    float mAngle = (ti.tm_min * 6.0f + ti.tm_sec * 0.1f - 90.0f) * 0.01745329f;
+    int16_t mx = cx + (int16_t)(cosf(mAngle) * 34);
+    int16_t my = cy + (int16_t)(sinf(mAngle) * 34);
+    gfx.drawLine(cx, cy, mx, my, Color565::NeonCyan);
+    gfx.drawLine(cx + 1, cy, mx + 1, my, Color565::NeonCyan);
+
+    // Second Hand
+    float sAngle = (ti.tm_sec * 6.0f - 90.0f) * 0.01745329f;
+    int16_t sx = cx + (int16_t)(cosf(sAngle) * 38);
+    int16_t sy = cy + (int16_t)(sinf(sAngle) * 38);
+    gfx.drawLine(cx, cy, sx, sy, Color565::Red);
+
+    // Center Cap
+    gfx.fillCircle(cx, cy, 3, Color565::Gold);
+
+    // Bottom Date & Digital Pill
+    const char* months[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    char footer[24];
+    snprintf(footer, sizeof(footer), "%02d:%02d  %d %s", ti.tm_hour, ti.tm_min, ti.tm_mday, months[ti.tm_mon % 12]);
+    gfx.fillRoundRect(16, 110, 96, 15, 4, Color565::rgb(18, 28, 48));
+    gfx.drawRoundRect(16, 110, 96, 15, 4, Color565::DeepBlue);
+    gfx.drawCenteredText(114, footer, Color565::White);
+  }
+
+  // 5: Retro Split-Flap Flip Clock
+  void renderFlipClock(DisplayCanvas& gfx) {
+    gfx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Color565::rgb(12, 12, 16));
+
+    gfx.drawCenteredText(6, "RETRO FLIP CLOCK", Color565::Gold);
+
+    time_t now = time(nullptr);
+    struct tm ti;
+    localtime_r(&now, &ti);
+
+    char hStr[4], mStr[4];
+    snprintf(hStr, sizeof(hStr), "%02d", ti.tm_hour);
+    snprintf(mStr, sizeof(mStr), "%02d", ti.tm_min);
+
+    // Left Card: HOURS (X=6, Y=22, W=54, H=64)
+    gfx.fillRoundRect(6, 22, 54, 64, 6, Color565::rgb(30, 32, 40));
+    gfx.drawRoundRect(6, 22, 54, 64, 6, Color565::GrayMid);
+    gfx.drawText(16, 43, hStr, Color565::White, 3);
+    // Horizontal Split-Flap Gap
+    gfx.fillRect(6, 53, 54, 2, Color565::Black);
+    gfx.fillRect(7, 51, 3, 6, Color565::GrayLight);
+    gfx.fillRect(56, 51, 3, 6, Color565::GrayLight);
+
+    // Right Card: MINUTES (X=68, Y=22, W=54, H=64)
+    gfx.fillRoundRect(68, 22, 54, 64, 6, Color565::rgb(30, 32, 40));
+    gfx.drawRoundRect(68, 22, 54, 64, 6, Color565::GrayMid);
+    gfx.drawText(78, 43, mStr, Color565::NeonCyan, 3);
+    // Horizontal Split-Flap Gap
+    gfx.fillRect(68, 53, 54, 2, Color565::Black);
+    gfx.fillRect(69, 51, 3, 6, Color565::GrayLight);
+    gfx.fillRect(118, 51, 3, 6, Color565::GrayLight);
+
+    // Blinking Center Dots
+    if ((ti.tm_sec % 2) == 0) {
+      gfx.fillCircle(64, 44, 2, Color565::Gold);
+      gfx.fillCircle(64, 64, 2, Color565::Gold);
+    }
+
+    // Seconds Progress Bar + Date
+    int16_t secW = (ti.tm_sec * 108) / 59;
+    gfx.drawRect(10, 94, 108, 6, Color565::GrayDark);
+    gfx.fillRect(10, 94, secW, 6, Color565::Orange);
+
+    const char* days[]   = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT" };
+    const char* months[] = { "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC" };
+    char dateBuf[24];
+    snprintf(dateBuf, sizeof(dateBuf), "%s %02d %s %d",
+             days[ti.tm_wday % 7], ti.tm_mday, months[ti.tm_mon % 12], ti.tm_year + 1900);
+    gfx.drawCenteredText(108, dateBuf, Color565::GrayLight);
+  }
+
+  // 1: Weather & Temp
   void renderWeather(DisplayCanvas& gfx) {
     gfx.fillGradientV(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Color565::rgb(25, 60, 130), Color565::rgb(10, 20, 40));
 
     gfx.drawCenteredText(6, gSettings.data.city_name, Color565::White);
 
     // Sun + Cloud icon
-    gfx.fillCircle(34, 44, 13, Color565::Yellow);
-    gfx.drawCircle(34, 44, 16, Color565::Gold);
-    gfx.fillRoundRect(28, 48, 24, 10, 4, Color565::White);
+    gfx.fillCircle(32, 44, 12, Color565::Yellow);
+    gfx.drawCircle(32, 44, 15, Color565::Gold);
+    gfx.fillRoundRect(26, 48, 24, 10, 4, Color565::White);
 
     char tbuf[16];
-    snprintf(tbuf, sizeof(tbuf), "%.1fC", _tempC);
-    gfx.drawText(60, 36, tbuf, Color565::White, 2);
+    snprintf(tbuf, sizeof(tbuf), "%.1fC", gPower.getWeatherTempC());
+    gfx.drawText(56, 36, tbuf, Color565::White, 2);
 
     gfx.fillRoundRect(10, 72, 108, 34, 4, Color565::rgb(15, 30, 60));
     gfx.drawRoundRect(10, 72, 108, 34, 4, Color565::Cyan);
 
     char hbuf[24];
-    snprintf(hbuf, sizeof(hbuf), "Humidity: %u%%", _humidity);
+    snprintf(hbuf, sizeof(hbuf), "Humidity: %u%%", gPower.getWeatherHumidity());
     gfx.drawCenteredText(80, hbuf, Color565::Cyan);
     gfx.drawCenteredText(93, gSettings.data.idle_random_mode ? "Mode: Random Mix" : "Mode: Sequential", Color565::Lime);
 
-    gfx.drawCenteredText(118, "<-/->:VIEW  BOOT:WAKE", Color565::GrayLight);
+    gfx.drawCenteredText(118, "A/B:VIEW  BOOT:WAKE", Color565::GrayLight);
   }
 
+  // 2: Photo Frame
   void renderPhoto(DisplayCanvas& gfx) {
     if (_photoCount == 0) {
       gfx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Color565::Black);
@@ -391,6 +537,7 @@ public:
     }
   }
 
+  // 3: Video / Animation
   void renderVideo(DisplayCanvas& gfx) {
     if (_videoCount > 0) {
       if (!_videoFile) openCurrentVideo();
@@ -439,5 +586,29 @@ public:
       gfx.drawCircle(x0, y0, r, col);
     }
     gfx.drawCenteredText(58, "TV MODE", Color565::White);
+  }
+
+  // 6: About Me & Buy Me a Coffee (PromptPay QR Code)
+  void renderAboutQr(DisplayCanvas& gfx) {
+    gfx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Color565::rgb(12, 24, 52));
+
+    // Top Header Banner
+    gfx.fillRect(0, 0, SCREEN_WIDTH, 14, Color565::rgb(0, 62, 126));
+    gfx.drawCenteredText(3, gSettings.data.idle_lock_qr ? "PROMPTPAY (LOCKED)" : "BUY ME A COFFEE", Color565::Gold);
+
+    // Render 112x112 PromptPay QR Code centered at X=8, Y=15
+    const int16_t qx = 8;
+    const int16_t qy = 15;
+    uint16_t* dst = gfx.getBuffer();
+    for (int y = 0; y < PROMPTPAY_QR_SIZE; ++y) {
+      int16_t py = qy + y;
+      if (py < 0 || py >= SCREEN_HEIGHT) continue;
+      for (int x = 0; x < PROMPTPAY_QR_SIZE; ++x) {
+        int16_t px = qx + x;
+        if (px < 0 || px >= SCREEN_WIDTH) continue;
+        uint8_t c332 = pgm_read_byte(&PROMPTPAY_QR_332[y * PROMPTPAY_QR_SIZE + x]);
+        dst[py * SCREEN_WIDTH + px] = expandRgb332(c332);
+      }
+    }
   }
 };

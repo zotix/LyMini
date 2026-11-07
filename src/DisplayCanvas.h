@@ -13,6 +13,10 @@ private:
   int8_t _shakeX = 0;
   int8_t _shakeY = 0;
   uint8_t _shakeFrames = 0;
+  uint8_t _rotation = 1; // Default 90°
+  uint8_t _colOffset = 3;
+  uint8_t _rowOffset = 2;
+  bool    _colorBgr  = true;
 
   inline void writeCommand(uint8_t cmd) {
     digitalWrite(PIN_TFT_DC, LOW);
@@ -94,9 +98,8 @@ public:
 
     writeCommand(0x20); // INVOFF (or 0x21 INVON based on panel)
     
-    // MADCTL Memory Access Control (BGR, Rotation 2)
-    writeCommand(0x36);
-    writeData(0x00 | 0x08); // BGR color order
+    // MADCTL Memory Access Control (Default Rotation 1 = 90 deg, BGR)
+    setRotation(1, true);
 
     writeCommand(0x3A); // COLMOD 16-bit color
     writeData(0x05);
@@ -107,6 +110,42 @@ public:
     clear(Color565::Black);
     present();
   }
+
+  void setRotation(uint8_t rot, bool bgr = true) {
+    _rotation = rot & 3;
+    _colorBgr = bgr;
+    uint8_t colorBit = bgr ? 0x08 : 0x00;
+    uint8_t madctl = 0;
+
+    // ST7735_GREENTAB3 128x128 geometry offsets (matched with factory ELF)
+    switch (_rotation) {
+      case 0: // 0 deg
+        madctl = 0xC0 | colorBit;
+        _colOffset = 2;
+        _rowOffset = 3;
+        break;
+      case 1: // 90 deg (Default)
+        madctl = 0xA0 | colorBit;
+        _colOffset = 3;
+        _rowOffset = 2;
+        break;
+      case 2: // 180 deg
+        madctl = 0x00 | colorBit;
+        _colOffset = 2;
+        _rowOffset = 1;
+        break;
+      case 3: // 270 deg
+        madctl = 0x60 | colorBit;
+        _colOffset = 1;
+        _rowOffset = 2;
+        break;
+    }
+    writeCommand(0x36); // MADCTL
+    writeData(madctl);
+  }
+
+  uint8_t getRotation() const { return _rotation; }
+  bool isColorBgr() const { return _colorBgr; }
 
   void setBrightness(uint8_t percent) {
     if (percent > 100) percent = 100;
@@ -127,21 +166,17 @@ public:
   }
 
   void setAddrWindow(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1) {
-    // Offset for ST7735 128x128 Greentab3: colstart = 2, rowstart = 1
-    uint8_t colOffset = 2;
-    uint8_t rowOffset = 1;
-
     writeCommand(0x2A); // CASET
     writeData(0x00);
-    writeData(x0 + colOffset);
+    writeData(x0 + _colOffset);
     writeData(0x00);
-    writeData(x1 + colOffset);
+    writeData(x1 + _colOffset);
 
     writeCommand(0x2B); // RASET
     writeData(0x00);
-    writeData(y0 + rowOffset);
+    writeData(y0 + _rowOffset);
     writeData(0x00);
-    writeData(y1 + rowOffset);
+    writeData(y1 + _rowOffset);
 
     writeCommand(0x2C); // RAMWR
   }
@@ -158,12 +193,20 @@ public:
 
     setAddrWindow(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
 
+    // Byte-swap 16-bit RGB565 pixels (Little-Endian -> Big-Endian MSB first for ST7735 SPI)
+    for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; ++i) {
+      _buffer[i] = __builtin_bswap16(_buffer[i]);
+    }
+
     digitalWrite(PIN_TFT_DC, HIGH);
     digitalWrite(PIN_TFT_CS, LOW);
-    
-    // Transfer entire 128x128 buffer at 40MHz via SPI (DMA / block transfer)
     _spi->writeBytes((uint8_t*)_buffer, sizeof(_buffer));
     digitalWrite(PIN_TFT_CS, HIGH);
+
+    // Restore Little-Endian in framebuffer in case static screens skip redrawing
+    for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; ++i) {
+      _buffer[i] = __builtin_bswap16(_buffer[i]);
+    }
   }
 
   inline void drawPixel(int16_t x, int16_t y, uint16_t color) {

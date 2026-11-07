@@ -4,12 +4,15 @@
 
 #define MAX_SAVED_WIFI 3
 
-// Idle screen bitmask flags
-#define IDLE_MASK_CLOCK   0x01
-#define IDLE_MASK_WEATHER 0x02
-#define IDLE_MASK_PHOTO   0x04
-#define IDLE_MASK_VIDEO   0x08
-#define IDLE_MASK_ALL     0x0F
+// Idle screen bitmask flags (7 screens in v0.2.1)
+#define IDLE_MASK_CLOCK    0x01 // 0: Cyber Digital Clock
+#define IDLE_MASK_WEATHER  0x02 // 1: Weather & Temp
+#define IDLE_MASK_PHOTO    0x04 // 2: Photo Frame
+#define IDLE_MASK_VIDEO    0x08 // 3: Video / Animation
+#define IDLE_MASK_ANALOG   0x10 // 4: Analog Clock
+#define IDLE_MASK_FLIP     0x20 // 5: Flip Clock
+#define IDLE_MASK_ABOUT_QR 0x40 // 6: About Me & PromptPay QR
+#define IDLE_MASK_ALL      0x7F
 
 struct WifiCredential {
   char ssid[33];
@@ -20,7 +23,6 @@ struct SystemSettingsData {
   WifiCredential wifi_list[MAX_SAVED_WIFI];
   uint8_t wifi_count = 0;
 
-  // Primary/legacy shortcut
   char wifi_ssid[33] = "";
   char wifi_pass[65] = "";
 
@@ -30,13 +32,22 @@ struct SystemSettingsData {
   int timezone_offset= 7;          // UTC+7 (Thailand)
   
   uint8_t brightness = 85;         // 10-100%
+  uint8_t screen_rotation = 1;     // 0=0°, 1=90° (Default), 2=180°, 3=270°
+  uint8_t color_order_bgr = 1;     // 1=BGR (ST7735 GREENTAB3 standard with MSB swap), 0=RGB
+
   uint16_t idle_timeout_sec = 60;  // Default 1 minute
   uint16_t idle_cycle_sec   = 12;  // Seconds per idle screen
-  uint8_t idle_enabled_mask = IDLE_MASK_ALL; // Bitmask: Clock|Weather|Photo|Video
+  uint8_t idle_enabled_mask = IDLE_MASK_ALL;
   uint8_t idle_random_mode  = 1;   // 1 = Random screen & media, 0 = Sequential
+  uint8_t idle_lock_qr      = 0;   // 1 = Lock Idle on PromptPay QR code
   uint8_t led_enabled       = 1;
 
-  // Pipe-separated list of disabled media filenames, e.g. "|01_cyber_city.rgb|"
+  // Night mode screen-off schedule
+  uint8_t night_mode_enabled = 0;
+  uint8_t night_start_hour   = 23; // 23:00
+  uint8_t night_end_hour     = 6;  // 06:00
+
+  // Pipe-separated list of disabled media filenames
   char disabled_media[256]  = "";
 };
 
@@ -51,11 +62,17 @@ public:
     data.longitude = 100.5018f;
     data.timezone_offset = 7;
     data.brightness = 85;
+    data.screen_rotation = 1; // Default 90 degrees
+    data.color_order_bgr = 1;
     data.idle_timeout_sec = 60;
     data.idle_cycle_sec = 12;
     data.idle_enabled_mask = IDLE_MASK_ALL;
     data.idle_random_mode = 1;
+    data.idle_lock_qr = 0;
     data.led_enabled = 1;
+    data.night_mode_enabled = 0;
+    data.night_start_hour = 23;
+    data.night_end_hour = 6;
 
     Preferences prefs;
     if (prefs.begin("miniapp_cfg", true)) {
@@ -72,7 +89,6 @@ public:
         strncpy(data.wifi_list[i].pass, p.c_str(), 64);
       }
 
-      // Backward compatibility with single ssid/pass
       String legacySsid = prefs.getString("ssid", "");
       String legacyPass = prefs.getString("pass", "");
       if (data.wifi_count == 0 && legacySsid.length() > 0) {
@@ -89,16 +105,22 @@ public:
       String c = prefs.getString("city", "Bangkok");
       strncpy(data.city_name, c.c_str(), sizeof(data.city_name) - 1);
       
-      data.latitude         = prefs.getFloat("lat", 13.7563f);
-      data.longitude        = prefs.getFloat("lon", 100.5018f);
-      data.timezone_offset  = prefs.getInt("tz", 7);
-      data.brightness       = prefs.getUChar("bright", 85);
-      data.idle_timeout_sec = prefs.getUShort("idletime", 60);
-      data.idle_cycle_sec   = prefs.getUShort("idlecyc", 12);
-      data.idle_enabled_mask= prefs.getUChar("idlemask", IDLE_MASK_ALL);
+      data.latitude          = prefs.getFloat("lat", 13.7563f);
+      data.longitude         = prefs.getFloat("lon", 100.5018f);
+      data.timezone_offset   = prefs.getInt("tz", 7);
+      data.brightness        = prefs.getUChar("bright", 85);
+      data.screen_rotation   = prefs.getUChar("rot", 1); // Default 1 (90 deg)
+      data.color_order_bgr   = prefs.getUChar("bgr", 1);
+      data.idle_timeout_sec  = prefs.getUShort("idletime", 60);
+      data.idle_cycle_sec    = prefs.getUShort("idlecyc", 12);
+      data.idle_enabled_mask = prefs.getUChar("idlemask2", IDLE_MASK_ALL);
       if (data.idle_enabled_mask == 0) data.idle_enabled_mask = IDLE_MASK_ALL;
-      data.idle_random_mode = prefs.getUChar("idlernd", 1);
-      data.led_enabled      = prefs.getUChar("led", 1);
+      data.idle_random_mode  = prefs.getUChar("idlernd", 1);
+      data.idle_lock_qr      = prefs.getUChar("lockqr", 0);
+      data.led_enabled       = prefs.getUChar("led", 1);
+      data.night_mode_enabled= prefs.getUChar("night_en", 0);
+      data.night_start_hour  = prefs.getUChar("night_st", 23);
+      data.night_end_hour    = prefs.getUChar("night_ed", 6);
 
       String dis = prefs.getString("dis_med", "");
       strncpy(data.disabled_media, dis.c_str(), sizeof(data.disabled_media) - 1);
@@ -129,11 +151,17 @@ public:
       prefs.putFloat("lon", data.longitude);
       prefs.putInt("tz", data.timezone_offset);
       prefs.putUChar("bright", data.brightness);
+      prefs.putUChar("rot", data.screen_rotation);
+      prefs.putUChar("bgr", data.color_order_bgr);
       prefs.putUShort("idletime", data.idle_timeout_sec);
       prefs.putUShort("idlecyc", data.idle_cycle_sec);
-      prefs.putUChar("idlemask", data.idle_enabled_mask);
+      prefs.putUChar("idlemask2", data.idle_enabled_mask);
       prefs.putUChar("idlernd", data.idle_random_mode);
+      prefs.putUChar("lockqr", data.idle_lock_qr);
       prefs.putUChar("led", data.led_enabled);
+      prefs.putUChar("night_en", data.night_mode_enabled);
+      prefs.putUChar("night_st", data.night_start_hour);
+      prefs.putUChar("night_ed", data.night_end_hour);
       prefs.putString("dis_med", data.disabled_media);
       prefs.end();
     }
@@ -141,13 +169,11 @@ public:
 
   void addOrUpdateWifi(const char* ssid, const char* pass) {
     if (!ssid || strlen(ssid) == 0) return;
-    // Check if already exists
     for (int i = 0; i < data.wifi_count; ++i) {
       if (strcmp(data.wifi_list[i].ssid, ssid) == 0) {
         if (pass && strlen(pass) > 0) {
           strncpy(data.wifi_list[i].pass, pass, 64);
         }
-        // Move to slot 0 (most recent)
         WifiCredential tmp = data.wifi_list[i];
         for (int j = i; j > 0; --j) data.wifi_list[j] = data.wifi_list[j - 1];
         data.wifi_list[0] = tmp;
@@ -155,7 +181,6 @@ public:
         return;
       }
     }
-    // Insert at front
     int newCount = (data.wifi_count < MAX_SAVED_WIFI) ? (data.wifi_count + 1) : MAX_SAVED_WIFI;
     for (int j = newCount - 1; j > 0; --j) {
       data.wifi_list[j] = data.wifi_list[j - 1];
@@ -179,7 +204,6 @@ public:
 
   bool isMediaEnabled(const char* filename) const {
     if (!filename || strlen(data.disabled_media) == 0) return true;
-    // Extract basename
     const char* base = strrchr(filename, '/');
     base = base ? (base + 1) : filename;
     char token[48];

@@ -2,7 +2,7 @@
 #include <Arduino.h>
 
 // ============================================================================
-// Spotpear ESP32-C3 1.44" Hardware Pin Definitions
+// Spotpear ESP32-C3 1.44" Hardware Pin Definitions (v0.2.1)
 // ============================================================================
 
 // Display pins (ST7735 128x128 SPI)
@@ -14,9 +14,14 @@
 #define PIN_TFT_BL   7   // Backlight PWM
 
 // Buttons (Active LOW with internal pull-up)
-#define PIN_BTN_LEFT  8   // Key1 (K1)
-#define PIN_BTN_RIGHT 10  // Key2 (K2)
-#define PIN_BTN_OK    9   // BOOT (B) button
+// Updated in v0.2.1: Button A/Left = IO10, Button B/Right = IO8
+#define PIN_BTN_LEFT  10  // Button A / Left (IO10)
+#define PIN_BTN_RIGHT 8   // Button B / Right (IO8)
+#define PIN_BTN_OK    9   // BOOT (B) button (IO9)
+
+// Hold durations
+#define BOOT_HOLD_MENU_EXIT_MS 7000UL // Hold BOOT 7 seconds in-game to return to menu
+#define BOOT_HOLD_LAUNCHER_MS  1500UL // Hold BOOT 1.5s in menu to enter Idle TV
 
 // Status / Game FX LED
 #define PIN_STATUS_LED 11 // LED L191 (Active HIGH)

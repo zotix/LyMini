@@ -55,9 +55,10 @@ public:
     return (millis() - _lastActivityMs) / 1000UL;
   }
 
-  InputState update() {
+  InputState update(uint32_t holdThresholdMs = BOOT_HOLD_MENU_EXIT_MS) {
     InputState st;
     uint32_t now = millis();
+    if (holdThresholdMs < 500) holdThresholdMs = 500;
 
     // Check LED timer
     if (_ledOffTimeMs > 0 && now >= _ledOffTimeMs) {
@@ -85,18 +86,19 @@ public:
       _okHoldTriggered = false;
     } else if (curOk && !_okHoldTriggered) {
       uint32_t heldMs = now - _okPressStartTime;
-      if (heldMs > 150) {
-        uint32_t p = ((heldMs - 150) * 100) / 1050;
+      if (heldMs > 250) {
+        uint32_t span = (holdThresholdMs > 250) ? (holdThresholdMs - 250) : 250;
+        uint32_t p = ((heldMs - 250) * 100) / span;
         st.okHoldPct = (p > 100) ? 100 : (uint8_t)p;
       }
-      if (heldMs >= 1200) {
+      if (heldMs >= holdThresholdMs) {
         st.menuHold = true;
         st.okHoldPct = 100;
         _okHoldTriggered = true;
         triggerLed(150);
       }
     } else if (!curOk && _lastOk) {
-      if (!_okHoldTriggered && (now - _okPressStartTime < 1200)) {
+      if (!_okHoldTriggered && (now - _okPressStartTime < holdThresholdMs)) {
         st.okShortReleased = true;
       }
       _okHoldTriggered = false;

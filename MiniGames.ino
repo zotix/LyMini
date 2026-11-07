@@ -1,6 +1,6 @@
 // ============================================================================
-// Spotpear ESP32-C3 1.44" ST7735 MiniGames v0.2.0
-// 8-in-1 Arcade + Smart Idle TV + Power Manager + http://mini.local Web Portal
+// Spotpear ESP32-C3 1.44" ST7735 MiniGames v0.2.1
+// 9-in-1 Arcade + Smart Idle TV + Power Manager + Captive Web Portal
 // ============================================================================
 
 #include <Arduino.h>
@@ -19,7 +19,7 @@
 #include "src/WebPortal.h"
 #include "src/Font5x7.h"
 
-#define APP_VERSION "0.2.0"
+#define APP_VERSION "0.2.1"
 
 // Global System Objects
 SystemSettings gSettings;
@@ -53,8 +53,9 @@ void setup() {
   gInput.begin();
   gPower.begin();
 
-  // 3. Init ST7735 Display & Framebuffer
+  // 3. Init ST7735 Display & Framebuffer (Default Rotation 90° & BGR Color Order)
   gDisplay.begin();
+  gDisplay.setRotation(gSettings.data.screen_rotation, gSettings.data.color_order_bgr != 0);
   gDisplay.setBrightness(gSettings.data.brightness);
 
   // 4. Seed Sample Photos (.rgb) & Videos (.mvid) into LittleFS on first boot
@@ -117,7 +118,9 @@ void loop() {
   if (dt > 0.05f) dt = 0.05f;
 
   // 3. Update Input & Power Manager
-  InputState input = gInput.update();
+  // Hold BOOT for 7 seconds (7000 ms) in-game to return to menu, or 1.5s in Launcher to enter Idle
+  uint32_t holdThreshold = (gState == STATE_GAME) ? BOOT_HOLD_MENU_EXIT_MS : BOOT_HOLD_LAUNCHER_MS;
+  InputState input = gInput.update(holdThreshold);
   uint32_t idleSec = gInput.getIdleSeconds();
 
   gPower.update(gState == STATE_LAUNCHER,
@@ -156,7 +159,7 @@ void loop() {
     }
 
   } else if (gState == STATE_GAME) {
-    // Hold BOOT for > 1.2s in Game -> Return to Launcher Menu & Turn Wi-Fi ON
+    // Hold BOOT for 7 seconds in Game -> Return to Launcher Menu & Turn Wi-Fi ON
     if (input.menuHold) {
       HighScoreStore::setActiveGameIndex(TOTAL_GAMES); // Menu
       gLauncher.init(gCurrentGameIdx);
@@ -167,6 +170,12 @@ void loop() {
       IGame* game = gRegistry.getGame(gCurrentGameIdx);
       game->update(input, dt);
       game->render(gDisplay);
+      if (input.okHoldPct > 0) {
+        int16_t bw = (input.okHoldPct * 124) / 100;
+        gDisplay.fillRect(0, 118, SCREEN_WIDTH, 10, Color565::Black);
+        gDisplay.fillRect(2, 119, bw, 8, Color565::Magenta);
+        gDisplay.drawCenteredText(119, "HOLD 7s: EXIT MENU", Color565::White);
+      }
     }
 
   } else if (gState == STATE_IDLE) {

@@ -1,6 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <WiFi.h>
+#include <HTTPClient.h>
 #include <ESPmDNS.h>
 #include <time.h>
 #include "driver/usb_serial_jtag.h"
@@ -36,6 +37,13 @@ private:
   bool     _usbConnected = true;
   uint8_t  _currentCpuMhz = 160;
   uint8_t  _appliedBrightness = 85;
+
+  // Weather state (fetched automatically when Wi-Fi STA connects)
+  bool     _hasValidWeather = false;
+  float    _weatherTempC = 0.0f;
+  uint8_t  _weatherHumid = 0;
+  uint32_t _lastWeatherFetchMs = 0;
+  bool     _geocodePending = false;
 
   void detectExternalAdc() {
     // Check if GPIO 1 (P111) has an external battery divider connected
@@ -93,6 +101,86 @@ public:
   uint8_t getBatteryPercent() const { return _batteryPct; }
   bool isUsbOrCharging() const { return _usbConnected; }
   uint8_t getCpuMhz() const { return _currentCpuMhz; }
+
+  bool hasValidWeather() const { return _hasValidWeather; }
+  float getWeatherTempC() const { return _weatherTempC; }
+  uint8_t getWeatherHumidity() const { return _weatherHumid; }
+
+  void requestWeatherRefresh(bool geocodeCity = false) {
+    _lastWeatherFetchMs = 0;
+    if (geocodeCity) _geocodePending = true;
+    if (!_wifiEnabled) {
+      requestWifiOn();
+    } else if (WiFi.status() == WL_CONNECTED) {
+      fetchWeatherNow();
+    }
+  }
+
+  void fetchWeatherNow() {
+    if (!_wifiEnabled || WiFi.status() != WL_CONNECTED) return;
+    _lastWeatherFetchMs = millis();
+
+    if (_geocodePending && strlen(gSettings.data.city_name) > 0) {
+      _geocodePending = false;
+      HTTPClient geo;
+      String encodedCity = String(gSettings.data.city_name);
+      encodedCity.replace(" ", "%20");
+      String geoUrl = "http://geocoding-api.open-meteo.com/v1/search?name=" + encodedCity + "&count=1&language=en&format=json";
+      geo.setTimeout(2500);
+      geo.begin(geoUrl);
+      if (geo.GET() == HTTP_CODE_OK) {
+        String p = geo.getString();
+        int latIdx = p.indexOf("\"latitude\":");
+        int lonIdx = p.indexOf("\"longitude\":");
+        if (latIdx > 0 && lonIdx > 0) {
+          gSettings.data.latitude  = p.substring(latIdx + 11).toFloat();
+          gSettings.data.longitude = p.substring(lonIdx + 12).toFloat();
+          gSettings.save();
+        }
+      }
+      geo.end();
+    }
+
+    HTTPClient http;
+    char url[160];
+    snprintf(url, sizeof(url),
+             "http://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=temperature_2m,relative_humidity_2m",
+             gSettings.data.latitude, gSettings.data.longitude);
+    http.setTimeout(3000);
+    http.begin(url);
+    int code = http.GET();
+    if (code == HTTP_CODE_OK) {
+      String payload = http.getString();
+      int curIdx = payload.indexOf("\"current\":");
+      int searchFrom = (curIdx > 0) ? curIdx : 0;
+      int tempIdx = payload.indexOf("\"temperature_2m\":", searchFrom);
+      int humIdx  = payload.indexOf("\"relative_humidity_2m\":", searchFrom);
+      if (tempIdx > 0) {
+        _weatherTempC = payload.substring(tempIdx + 17).toFloat();
+        if (humIdx > 0) _weatherHumid = payload.substring(humIdx + 23).toInt();
+        _hasValidWeather = true;
+      }
+    }
+    http.end();
+  }
+
+  bool isNightScreenOffTime() const {
+    if (!gSettings.data.night_mode_enabled) return false;
+    if (!isTimeSynced()) return false;
+    time_t now = time(nullptr);
+    struct tm ti;
+    localtime_r(&now, &ti);
+    uint8_t h = (uint8_t)ti.tm_hour;
+    uint8_t st = gSettings.data.night_start_hour % 24;
+    uint8_t ed = gSettings.data.night_end_hour % 24;
+    if (st == ed) return false;
+    if (st < ed) {
+      return (h >= st && h < ed);
+    } else {
+      // Crosses midnight (e.g. 23:00 -> 06:00)
+      return (h >= st || h < ed);
+    }
+  }
 
   void notifyWebActivity() {
     _lastWebActivityMs = millis();
@@ -189,6 +277,15 @@ public:
       }
     }
 
+    // 2.5 Auto Weather Fetch as soon as Wi-Fi STA connects (every 10 mins)
+    if (_wifiEnabled && WiFi.status() == WL_CONNECTED) {
+      if (!_hasValidWeather || _lastWeatherFetchMs == 0 || (now - _lastWeatherFetchMs >= 600000UL)) {
+        if (_lastWeatherFetchMs == 0 || (now - _lastWeatherFetchMs >= 15000UL)) {
+          fetchWeatherNow();
+        }
+      }
+    }
+
     // 3. Auto Wi-Fi Power-Off Policy
     if (_wifiEnabled) {
       bool apHasClient = (WiFi.softAPgetStationNum() > 0);
@@ -198,7 +295,7 @@ public:
       if (inGame && !apHasClient && (now - _lastWebActivityMs > 15000)) {
         // Entered a game and nobody is using the web portal:
         // If time is already synced OR we already tried for 20s, turn off Wi-Fi to save power & boost FPS
-        if (isTimeSynced() || onDuration > 20000) {
+        if ((isTimeSynced() && _hasValidWeather) || onDuration > 25000) {
           requestWifiOff();
         }
       } else if (!apHasClient && !recentWebUse && onDuration >= WIFI_SEARCH_TIMEOUT_MS) {
@@ -218,10 +315,12 @@ public:
       setCpuSpeed(80);
     }
 
-    // 5. Progressive Backlight Dimming
+    // 5. Progressive Backlight Dimming & Night Mode Screen-Off Schedule
     uint8_t targetBri = gSettings.data.brightness;
     if (inIdle) {
-      if (idleSec >= 300) {
+      if (isNightScreenOffTime()) {
+        targetBri = 0; // Turn screen backlight completely OFF during scheduled night hours!
+      } else if (idleSec >= 300) {
         targetBri = min((uint8_t)10, targetBri); // Deep Eco Dim (10%) after 5 mins
       } else {
         targetBri = min((uint8_t)38, targetBri); // Idle Dim (38%) after 1 min
