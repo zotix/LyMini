@@ -7,7 +7,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>LyMini Arcade & Smart TV v0.2.2</title>
+<title>LyMini Arcade & Smart TV v0.2.3</title>
 <style>
   :root {
     --bg: #0b0f17;
@@ -97,7 +97,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 <div class="container">
   <div class="topbar">
     <div>
-      <h1>🕹️ LyMini <span class="badge">v0.2.2</span> <span id="connBadge" class="badge online">🟢 Online</span></h1>
+      <h1>🕹️ LyMini <span class="badge">v0.2.3</span> <span id="connBadge" class="badge online">🟢 Online</span></h1>
       <div class="hint" id="statusText">IP: <b>192.168.4.1</b> | <b>http://lymini.local</b></div>
     </div>
     <div style="display:flex; gap:6px; align-items:center;">
@@ -203,7 +203,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       <div class="row">
         <div>
           <label data-i18n="id_timeout">เข้า Idle เมื่อไม่กดปุ่ม (วินาที):</label>
-          <input type="number" id="inpIdleTime" min="15" max="600" value="60" />
+          <input type="number" id="inpIdleTime" min="10" max="600" value="30" />
         </div>
         <div>
           <label data-i18n="id_cycle">สลับหน้าทุกๆ (วินาที):</label>
@@ -225,7 +225,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 
   <!-- TAB 2: Dedicated Auto-Update Max Brightness + Display Rotation + Night Schedule -->
   <div class="tab-pane" id="tab2">
-    <!-- Dedicated Max Brightness Auto-Update Card -->
+    <!-- Dedicated Max Brightness + Eco Power-Saving Brightness Auto-Update Card -->
     <div class="card" style="border-color:var(--accent);">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <h2 style="margin:0;" data-i18n="br_title">🔆 ความสว่างสูงสุด (Max Brightness — Auto Update)</h2>
@@ -238,6 +238,21 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
         <button type="button" class="sm" onclick="setQuickBri(40)">40%</button>
         <button type="button" class="sm" onclick="setQuickBri(75)">75%</button>
         <button type="button" class="sm" onclick="setQuickBri(100)">100%</button>
+      </div>
+
+      <hr style="border:none; border-top:1px solid var(--border); margin:14px 0;">
+
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2 style="margin:0; color:var(--green);" data-i18n="ec_title">🔋 ความสว่างช่วงประหยัดพลังงาน / พักหน้าจอ (Eco Brightness)</h2>
+        <span id="ecoBriValueBadge" class="badge" style="font-size:14px; color:var(--green);">35%</span>
+      </div>
+      <p class="hint" data-i18n="ec_desc">เลื่อนแถบเพื่อตั้งค่าความสว่างเมื่ออยู่ในโหมดพักหน้าจอ (Idle) แบบเรียลไทม์ (ไม่เกินค่า Max Brightness)</p>
+      <input type="range" id="rngEcoBright" min="5" max="100" value="35" style="margin-top:10px; accent-color:var(--green);" />
+      <div class="row">
+        <button type="button" class="sm green" onclick="setQuickEcoBri(10)">10%</button>
+        <button type="button" class="sm green" onclick="setQuickEcoBri(25)">25%</button>
+        <button type="button" class="sm green" onclick="setQuickEcoBri(50)">50%</button>
+        <button type="button" class="sm green" onclick="setQuickEcoBri(80)">80%</button>
       </div>
     </div>
 
@@ -376,6 +391,8 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       gal_hint: 'ติ๊กถูกเพื่อเปิดแสดงในรอบ Idle หรือกด 👁️ เพื่อยิงขึ้นจอ LyMini ทันที',
       br_title: '🔆 ความสว่างสูงสุด (Max Brightness — Auto Update)',
       br_desc: 'เลื่อนแถบเพื่อปรับความสว่างหน้าจอแบบเรียลไทม์ทันที (และเป็นเพดานความสว่างสูงสุดที่หน้าจอจะไม่สว่างเกินค่านี้)',
+      ec_title: '🔋 ความสว่างช่วงประหยัดพลังงาน / พักหน้าจอ (Eco Brightness)',
+      ec_desc: 'เลื่อนแถบเพื่อตั้งค่าความสว่างเมื่ออยู่ในโหมดพักหน้าจอ (Idle) แบบเรียลไทม์ (ไม่เกินค่า Max Brightness)',
       dp_title: '🖥️ การหมุนหน้าจอ ปุ่มควบคุม และลำดับสี',
       dp_rot: 'การหมุนหน้าจอ (Screen Rotation):',
       dp_color: 'ลำดับสีจอ (Color Order):',
@@ -434,6 +451,8 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       gal_hint: 'Check to enable in Idle rotation, or click 👁️ to display immediately on LyMini',
       br_title: '🔆 Max Brightness Ceiling (Auto Update)',
       br_desc: 'Slide to adjust screen brightness in real-time (sets the maximum brightness limit the screen will never exceed).',
+      ec_title: '🔋 Eco / Idle Power-Saving Brightness (Auto Update)',
+      ec_desc: 'Slide to adjust screen brightness used during Idle power-saving mode (never exceeds Max Brightness).',
       dp_title: '🖥️ Screen Rotation, Buttons & Color',
       dp_rot: 'Screen Rotation:',
       dp_color: 'Display Color Order:',
@@ -475,7 +494,33 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     applyLang();
   };
 
+  function stopAndResetStudio() {
+    if (animReq) {
+      cancelAnimationFrame(animReq);
+      animReq = null;
+    }
+    try {
+      srcVideo.pause();
+      srcVideo.removeAttribute('src');
+      srcVideo.load();
+    } catch (e) {}
+    const hadActiveMedia = (mediaType !== 'none');
+    mediaType = 'none';
+    currentImg = null;
+    if (mediaInput) mediaInput.value = '';
+    zoom = 1.0; rotation = 0; panX = 0; panY = 0;
+    liveQueued = false;
+    drawPlaceholder();
+    if (uploadMsg) uploadMsg.innerText = '';
+    if (hadActiveMedia) {
+      fetch('/api/stop_live', { method: 'POST' }).catch(() => {});
+    }
+  }
+
   window.switchTab = (idx) => {
+    if (idx !== 0) {
+      stopAndResetStudio();
+    }
     document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
     document.querySelectorAll('.tab-pane').forEach((p, i) => p.classList.toggle('active', i === idx));
     if (idx === 4) loadQrCanvas();
@@ -534,8 +579,40 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     sendBrightnessAuto(val, true);
   };
 
+  // --- Instant Auto-Update Eco / Idle Power-Saving Brightness Slider ---
+  const rngEcoBright = document.getElementById('rngEcoBright');
+  const ecoBriBadge = document.getElementById('ecoBriValueBadge');
+  let ecoBriBusy = false, ecoBriQueuedVal = null;
+
+  function sendEcoBrightnessAuto(val, saveToNvs) {
+    ecoBriBadge.innerText = val + '%';
+    if (ecoBriBusy && !saveToNvs) { ecoBriQueuedVal = val; return; }
+    ecoBriBusy = true;
+    fetch(`/api/eco_brightness?val=${val}&save=${saveToNvs ? 1 : 0}`, { method: 'POST' }).finally(() => {
+      ecoBriBusy = false;
+      if (ecoBriQueuedVal !== null) {
+        const nextV = ecoBriQueuedVal;
+        ecoBriQueuedVal = null;
+        sendEcoBrightnessAuto(nextV, false);
+      }
+    });
+  }
+
+  rngEcoBright.addEventListener('input', (e) => {
+    sendEcoBrightnessAuto(e.target.value, false);
+  });
+  rngEcoBright.addEventListener('change', (e) => {
+    sendEcoBrightnessAuto(e.target.value, true);
+  });
+
+  window.setQuickEcoBri = (val) => {
+    rngEcoBright.value = val;
+    sendEcoBrightnessAuto(val, true);
+  };
+
   // --- Preview Any Idle Mode Immediately on ESP32 ---
   window.previewIdle = async (scrIdx, cityIdx = -1) => {
+    document.getElementById('chkNightEn').checked = false;
     let url = `/api/preview_idle?scr=${scrIdx}`;
     if (cityIdx >= 0) url += `&cityIdx=${cityIdx}`;
     await fetch(url, { method: 'POST' });
@@ -724,6 +801,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 
   function triggerLiveFrame() {
     if (isUploadingMedia) return;
+    document.getElementById('chkNightEn').checked = false;
     if (liveBusy) { liveQueued = true; return; }
     liveBusy = true;
     const buf = canvasToRgb332();
@@ -933,6 +1011,10 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 
       rngBright.value = st.bright;
       briBadge.innerText = st.bright + '%';
+      if (st.ecoBright !== undefined) {
+        rngEcoBright.value = st.ecoBright;
+        ecoBriBadge.innerText = st.ecoBright + '%';
+      }
 
       document.getElementById('selRotation').value   = st.rot;
       document.getElementById('chkBtnRot').checked   = st.btnRot === 1;
@@ -1030,6 +1112,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       idletime: document.getElementById('inpIdleTime').value,
       idlecyc: document.getElementById('inpIdleCycle').value,
       bright: rngBright.value,
+      ecobri: rngEcoBright.value,
       rot: document.getElementById('selRotation').value,
       btnrot: document.getElementById('chkBtnRot').checked ? 1 : 0,
       bgr: document.getElementById('selColorBgr').value,

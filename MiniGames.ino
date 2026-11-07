@@ -1,5 +1,5 @@
 // ============================================================================
-// LyMini ESP32-C3 1.44" ST7735 MiniGames & Smart Idle TV v0.2.2
+// LyMini ESP32-C3 1.44" ST7735 MiniGames & Smart Idle TV v0.2.3
 // 9-in-1 Arcade + Smart Idle TV + Power Manager + http://lymini.local
 // ============================================================================
 
@@ -19,7 +19,7 @@
 #include "src/WebPortal.h"
 #include "src/Font5x7.h"
 
-#define APP_VERSION "0.2.2"
+#define APP_VERSION "0.2.3"
 
 // Global System Objects
 SystemSettings gSettings;
@@ -61,24 +61,11 @@ void setup() {
   // 4. Seed Sample Photos (.rgb) & Videos (.mvid) into LittleFS on first boot
   SampleMediaSeeder::seedIfNeeded(gDisplay);
 
-  // 5. Check RESET button cause (Hardware Reset vs Power-On)
+  // 5. Boot & Hardware RESET Policy (v0.2.3): Always open directly into Launcher Menu
   HighScoreStore::initRtc();
-  esp_reset_reason_t resetReason = esp_reset_reason();
-
-  if (resetReason == ESP_RST_EXT || resetReason == ESP_RST_SW) {
-    // Cycled via RESET button: switch to next game or menu
-    HighScoreStore::nextGameOnReset(TOTAL_GAMES + 1); // 0-7: Games, 8: Menu
-  }
-
-  int32_t activeIdx = HighScoreStore::getActiveGameIndex();
-  if (activeIdx >= 0 && activeIdx < TOTAL_GAMES) {
-    gCurrentGameIdx = activeIdx;
-    gRegistry.getGame(gCurrentGameIdx)->init();
-    gState = STATE_GAME;
-  } else {
-    gLauncher.init(0);
-    gState = STATE_LAUNCHER;
-  }
+  HighScoreStore::setActiveGameIndex(TOTAL_GAMES); // Menu
+  gLauncher.init(0);
+  gState = STATE_LAUNCHER;
 
   // 6. Smart Wi-Fi Policy on Boot:
   // Turn Wi-Fi ON if we are in the Launcher Menu OR if NTP time is not yet synced
@@ -174,7 +161,9 @@ void loop() {
         int16_t bw = (input.okHoldPct * 124) / 100;
         gDisplay.fillRect(0, 118, SCREEN_WIDTH, 10, Color565::Black);
         gDisplay.fillRect(2, 119, bw, 8, Color565::Magenta);
-        gDisplay.drawCenteredText(119, "HOLD 4s: EXIT MENU", Color565::White);
+        char hbuf[24];
+        snprintf(hbuf, sizeof(hbuf), "EXIT MENU: %u.%us", input.okHoldRemMs / 1000, (input.okHoldRemMs % 1000) / 100);
+        gDisplay.drawCenteredText(119, hbuf, Color565::White);
       }
     }
 

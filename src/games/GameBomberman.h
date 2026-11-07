@@ -56,7 +56,7 @@ private:
 
     for (int i = 0; i < 2; ++i) _bombs[i].active = false;
 
-    uint8_t enemyCnt = min((int)(2 + _stage / 2), 4);
+    uint8_t enemyCnt = min((int)(1 + _stage / 2), 3); // Fewer enemies (1 on stage 1)
     for (int i = 0; i < 4; ++i) {
       if (i < enemyCnt) {
         _enemies[i].alive = true;
@@ -92,8 +92,8 @@ private:
         _bombs[i].active = true;
         _bombs[i].x = _px;
         _bombs[i].y = _py;
-        _bombs[i].timer = 2.1f;
-        _bombs[i].range = 2;
+        _bombs[i].timer = 1.8f;
+        _bombs[i].range = 3; // Longer 3-tile blast range!
         return;
       }
     }
@@ -226,15 +226,10 @@ public:
       }
     }
 
-    // Check if Player is in Flame
-    if (_grid[_py][_px] == 3) {
-      triggerGameOver();
-      return;
-    }
-
-    // Update Enemies
+    // Player has Flame Shield (immune to own bomb flames so you don't blow yourself up!)
+    // Update Enemies (slower movement for easier hunting)
     bool anyAlive = false;
-    float enemyInterval = max(0.24f, 0.48f - _stage * 0.04f);
+    float enemyInterval = max(0.38f, 0.65f - _stage * 0.04f);
     for (int i = 0; i < 4; ++i) {
       if (!_enemies[i].alive) continue;
       anyAlive = true;

@@ -35,7 +35,7 @@ public:
     _dinoVY = 0.0f;
     _isGrounded = true;
     _isDucking = false;
-    _gameSpeed = 100.0f; // px/sec
+    _gameSpeed = 72.0f; // Easier starting speed
     _distance = 0.0f;
     _score = 0;
     _isGameOver = false;
@@ -48,28 +48,28 @@ public:
 
     for (int i = 0; i < 3; ++i) {
       _obstacles[i].active = false;
-      _obstacles[i].x = 160.0f + i * 80.0f;
+      _obstacles[i].x = 170.0f + i * 105.0f;
     }
   }
 
   void spawnObstacle(int index, float minX) {
-    _obstacles[index].x = minX + random(50, 110);
+    _obstacles[index].x = minX + random(78, 138); // Wider spacing between obstacles
     uint8_t r = random(0, 10);
-    if (_score > 150 && r >= 7) {
+    if (_score > 250 && r >= 8) {
       // Pterodactyl Bird
-      _obstacles[index].type = (r == 7) ? 2 : 3; // 2: low (duck), 3: high (jump)
-      _obstacles[index].w = 12;
-      _obstacles[index].h = 8;
-    } else if (r >= 4) {
+      _obstacles[index].type = (r == 8) ? 2 : 3; // 2: low (duck), 3: high (jump)
+      _obstacles[index].w = 11;
+      _obstacles[index].h = 7;
+    } else if (r >= 5) {
       // Double Cactus
       _obstacles[index].type = 1;
-      _obstacles[index].w = 10;
-      _obstacles[index].h = 16;
+      _obstacles[index].w = 9;
+      _obstacles[index].h = 14;
     } else {
       // Small Cactus
       _obstacles[index].type = 0;
       _obstacles[index].w = 6;
-      _obstacles[index].h = 12;
+      _obstacles[index].h = 11;
     }
     _obstacles[index].active = true;
   }
@@ -95,13 +95,13 @@ public:
       _isNight = !_isNight;
     }
 
-    // Speed scales with distance
-    _gameSpeed = 95.0f + sqrtf(_distance) * 2.5f;
-    if (_gameSpeed > 220.0f) _gameSpeed = 220.0f;
+    // Speed scales gently with distance
+    _gameSpeed = 72.0f + sqrtf(_distance) * 1.5f;
+    if (_gameSpeed > 155.0f) _gameSpeed = 155.0f;
 
-    // Jump Input (Left Button or OK Button)
-    if ((input.leftPressed || input.okPressed) && _isGrounded) {
-      _dinoVY = -190.0f; // Initial jump impulse
+    // Jump Input (Left Button or OK short release)
+    if ((input.leftPressed || input.leftHeld || input.okShortReleased) && _isGrounded) {
+      _dinoVY = -205.0f; // Higher, more forgiving jump impulse
       _isGrounded = false;
     }
 
@@ -109,12 +109,12 @@ public:
     _isDucking = input.rightHeld && _isGrounded;
     if (input.rightHeld && !_isGrounded) {
       // Fast fall down
-      _dinoVY += 450.0f * dt;
+      _dinoVY += 420.0f * dt;
     }
 
     // Apply Gravity
     if (!_isGrounded) {
-      _dinoVY += 520.0f * dt;
+      _dinoVY += 460.0f * dt;
       _dinoY += _dinoVY * dt;
 
       if (_dinoY >= 96.0f) {
@@ -145,12 +145,11 @@ public:
       }
     }
 
-    // Collision Detection
-    // Dino Box: X is fixed at 18
-    int16_t dinoBoxX = 18;
-    int16_t dinoBoxY = _isDucking ? (_dinoY + 6) : _dinoY;
-    int16_t dinoBoxW = _isDucking ? 16 : 10;
-    int16_t dinoBoxH = _isDucking ? 8 : 14;
+    // Forgiving Collision Detection (shrunk hitbox so grazing edges is safe)
+    int16_t dinoBoxX = 20;
+    int16_t dinoBoxY = _isDucking ? (_dinoY + 7) : (_dinoY + 2);
+    int16_t dinoBoxW = _isDucking ? 12 : 7;
+    int16_t dinoBoxH = _isDucking ? 6 : 10;
 
     for (int i = 0; i < 3; ++i) {
       if (!_obstacles[i].active) continue;

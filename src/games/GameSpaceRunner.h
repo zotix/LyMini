@@ -40,7 +40,7 @@ public:
   void init() override {
     _shipX = 64.0f - 6.0f;
     _score = 0;
-    _bombs = 2;
+    _bombs = 3; // 3 starting bombs for easier gameplay
     _bulletTimer = 0.0f;
     _isGameOver = false;
     _newHighScore = false;
@@ -60,10 +60,10 @@ public:
   void spawnEnemy(int i) {
     _enemies[i].x = random(10, SCREEN_WIDTH - 20);
     _enemies[i].y = -random(10, 30);
-    _enemies[i].type = (random(0, 3) == 0 ? 1 : 0);
-    _enemies[i].hp = (_enemies[i].type == 1) ? 2 : 1;
-    _enemies[i].vy = random(35, 75) * 1.0f;
-    _enemies[i].vx = (_enemies[i].type == 1) ? ((random(0, 2) == 0 ? -1 : 1) * 20.0f) : 0;
+    _enemies[i].type = (random(0, 4) == 0 ? 1 : 0);
+    _enemies[i].hp = 1; // 1-hit destroy for easier shooting
+    _enemies[i].vy = random(24, 52) * 1.0f;
+    _enemies[i].vx = (_enemies[i].type == 1) ? ((random(0, 2) == 0 ? -1 : 1) * 14.0f) : 0;
     _enemies[i].active = true;
   }
 
@@ -91,9 +91,9 @@ public:
     if (_shipX < 4.0f) _shipX = 4.0f;
     if (_shipX > SCREEN_WIDTH - 16.0f) _shipX = SCREEN_WIDTH - 16.0f;
 
-    // Auto-fire laser bullets
+    // Auto-fire laser bullets (faster fire rate)
     _bulletTimer += dt;
-    if (_bulletTimer >= 0.16f) {
+    if (_bulletTimer >= 0.12f) {
       _bulletTimer = 0.0f;
       for (int i = 0; i < 8; ++i) {
         if (!_bullets[i].active) {
@@ -105,8 +105,8 @@ public:
       }
     }
 
-    // Screen Bomb (OK Pressed)
-    if (input.okPressed && _bombs > 0) {
+    // Screen Bomb (OK Short Released so holding BOOT to exit doesn't trigger bomb)
+    if (input.okShortReleased && _bombs > 0) {
       _bombs--;
       for (int i = 0; i < 6; ++i) {
         if (_enemies[i].active) {
@@ -119,7 +119,7 @@ public:
     // Move Bullets
     for (int i = 0; i < 8; ++i) {
       if (_bullets[i].active) {
-        _bullets[i].y -= 190.0f * dt;
+        _bullets[i].y -= 210.0f * dt;
         if (_bullets[i].y < 12.0f) {
           _bullets[i].active = false;
         }
@@ -129,7 +129,7 @@ public:
     // Move Enemies
     for (int i = 0; i < 6; ++i) {
       if (!_enemies[i].active) {
-        if (random(0, 100) < 6) spawnEnemy(i);
+        if (random(0, 100) < 4) spawnEnemy(i);
       } else {
         _enemies[i].y += _enemies[i].vy * dt;
         _enemies[i].x += _enemies[i].vx * dt;
@@ -142,11 +142,11 @@ public:
           _enemies[i].active = false;
         }
 
-        // Bullet vs Enemy Collision
+        // Bullet vs Enemy Collision (wider hitbox)
         for (int b = 0; b < 8; ++b) {
           if (_bullets[b].active) {
-            if (_bullets[b].x >= _enemies[i].x && _bullets[b].x <= _enemies[i].x + 10.0f &&
-                _bullets[b].y >= _enemies[i].y && _bullets[b].y <= _enemies[i].y + 10.0f) {
+            if (_bullets[b].x >= _enemies[i].x - 3.0f && _bullets[b].x <= _enemies[i].x + 12.0f &&
+                _bullets[b].y >= _enemies[i].y - 2.0f && _bullets[b].y <= _enemies[i].y + 12.0f) {
               _bullets[b].active = false;
               _enemies[i].hp--;
               if (_enemies[i].hp == 0) {
@@ -158,10 +158,10 @@ public:
           }
         }
 
-        // Enemy vs Ship Collision
+        // Enemy vs Ship Collision (forgiving hitbox)
         if (_enemies[i].active) {
-          if (_shipX < _enemies[i].x + 9.0f && _shipX + 11.0f > _enemies[i].x &&
-              110.0f < _enemies[i].y + 9.0f && 122.0f > _enemies[i].y) {
+          if (_shipX + 2.0f < _enemies[i].x + 8.0f && _shipX + 9.0f > _enemies[i].x + 1.0f &&
+              112.0f < _enemies[i].y + 8.0f && 121.0f > _enemies[i].y + 1.0f) {
             triggerGameOver();
             return;
           }

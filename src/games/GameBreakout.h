@@ -31,9 +31,9 @@ public:
   uint16_t themeColor() const override { return Color565::Gold; }
 
   void init() override {
-    _paddleW = 26.0f;
+    _paddleW = 34.0f; // Wider paddle
     _paddleX = (SCREEN_WIDTH - _paddleW) / 2.0f;
-    _lives = 3;
+    _lives = 5;       // 5 Lives for easier gameplay
     _score = 0;
     _isGameOver = false;
     _newHighScore = false;
@@ -41,10 +41,10 @@ public:
 
     for (int i = 0; i < 2; ++i) _capsules[i].active = false;
 
-    // Reset Bricks
+    // Reset Bricks (all 1-hit bricks for satisfying smashing)
     for (int r = 0; r < BRICK_ROWS; ++r) {
       for (int c = 0; c < BRICK_COLS; ++c) {
-        _bricks[r][c] = (r == 0 && (c == 2 || c == 5)) ? 2 : 1;
+        _bricks[r][c] = 1;
       }
     }
 
@@ -55,8 +55,8 @@ public:
     _ballStuck = true;
     _ballX = _paddleX + (_paddleW / 2.0f);
     _ballY = 117.0f;
-    _ballVX = 55.0f;
-    _ballVY = -75.0f;
+    _ballVX = 42.0f;
+    _ballVY = -60.0f;
   }
 
   void update(const InputState& input, float dt) override {
@@ -128,8 +128,8 @@ public:
             _score += 15;
             _ballVY = -_ballVY;
 
-            // Chance to drop power-up capsule
-            if (random(0, 10) == 0) {
+            // Higher chance (25%) to drop power-up capsule
+            if (random(0, 4) == 0) {
               for (int k = 0; k < 2; ++k) {
                 if (!_capsules[k].active) {
                   _capsules[k].x = bx + 4;
@@ -164,12 +164,12 @@ collision_done:
             _capsules[i].y >= 118.0f && _capsules[i].y <= 124.0f) {
           _capsules[i].active = false;
           _score += 30;
-          if (_capsules[i].type == 0) _paddleW = 36.0f; // Wide Paddle
+          if (_capsules[i].type == 0) _paddleW = 46.0f; // Extra Wide Paddle
           else if (_capsules[i].type == 1) { // Slow ball
             _ballVX *= 0.8f;
             _ballVY *= 0.8f;
           } else if (_capsules[i].type == 2) {
-            _lives++;
+            if (_lives < 6) _lives++;
           }
         }
       }
@@ -181,7 +181,7 @@ collision_done:
       if (_lives == 0) {
         triggerGameOver();
       } else {
-        _paddleW = 26.0f;
+        _paddleW = 34.0f;
         resetBall();
       }
     }

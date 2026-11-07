@@ -37,7 +37,8 @@ private:
   bool     _usbConnected = true;
   uint8_t  _currentCpuMhz = 160;
   uint8_t  _appliedBrightness = 85;
-  uint32_t _brightnessPreviewUntilMs = 0; // Holds full Max Brightness while adjusting via Web or Menu
+  uint8_t  _previewBrightnessVal = 85;
+  uint32_t _brightnessPreviewUntilMs = 0; // Holds previewed brightness while adjusting via Web or Menu
 
   // Multi-location Weather state (fetched automatically when Wi-Fi STA connects)
   bool     _locValid[MAX_WEATHER_CITIES] = {false};
@@ -101,8 +102,35 @@ public:
   // Apply and preview Max Brightness immediately (even if device is currently in Idle mode!)
   void applyMaxBrightnessNow(uint8_t maxBri, DisplayCanvas* display) {
     gSettings.data.brightness = constrain(maxBri, 5, 100);
-    _brightnessPreviewUntilMs = millis() + 25000UL;
-    _appliedBrightness = gSettings.data.brightness;
+    _previewBrightnessVal = gSettings.data.brightness;
+    _brightnessPreviewUntilMs = millis() + 15000UL;
+    _appliedBrightness = _previewBrightnessVal;
+    if (display) {
+      display->setBrightness(_appliedBrightness);
+    }
+  }
+
+  // Apply and preview Eco / Power-Saving Brightness immediately on physical display
+  void applyEcoBrightnessNow(uint8_t ecoBri, DisplayCanvas* display) {
+    gSettings.data.eco_brightness = constrain(ecoBri, 5, 100);
+    uint8_t maxBri = constrain(gSettings.data.brightness, 5, 100);
+    _previewBrightnessVal = min(gSettings.data.eco_brightness, maxBri);
+    _brightnessPreviewUntilMs = millis() + 12000UL;
+    _appliedBrightness = _previewBrightnessVal;
+    if (display) {
+      display->setBrightness(_appliedBrightness);
+    }
+  }
+
+  // Force-disable Night Mode Screen-Off and wake screen to Max Brightness so Live View is always visible
+  void wakeForLiveView(DisplayCanvas* display) {
+    if (gSettings.data.night_mode_enabled != 0) {
+      gSettings.data.night_mode_enabled = 0;
+      gSettings.save();
+    }
+    _previewBrightnessVal = constrain(gSettings.data.brightness, 5, 100);
+    _brightnessPreviewUntilMs = millis() + 30000UL;
+    _appliedBrightness = _previewBrightnessVal;
     if (display) {
       display->setBrightness(_appliedBrightness);
     }
@@ -356,17 +384,18 @@ public:
       setCpuSpeed(80);
     }
 
-    // 5. Max Brightness Ceiling + Progressive Dimming + Night Mode Schedule
+    // 5. Max Brightness Ceiling + Configurable Eco/Idle Brightness + Night Mode Schedule
     uint8_t maxBri = constrain(gSettings.data.brightness, 5, 100);
+    uint8_t ecoBri = min((uint8_t)constrain(gSettings.data.eco_brightness, 5, 100), maxBri);
     uint8_t targetBri = maxBri;
 
-    if (inIdle && now > _brightnessPreviewUntilMs) {
+    if (now <= _brightnessPreviewUntilMs) {
+      targetBri = min(_previewBrightnessVal, maxBri);
+    } else if (inIdle) {
       if (isNightScreenOffTime()) {
         targetBri = 0; // Night Mode Screen-Off (0%)
-      } else if (idleSec >= 300) {
-        targetBri = min((uint8_t)10, maxBri); // Deep Eco Dim (never exceeds maxBri)
       } else {
-        targetBri = min((uint8_t)38, maxBri); // Idle Dim (never exceeds maxBri)
+        targetBri = ecoBri; // Configurable Idle / Eco Power-Saving Brightness
       }
     }
 

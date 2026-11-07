@@ -88,36 +88,44 @@ public:
       _playerLane++;
     }
 
-    // Nitro Boost (Hold OK)
-    _nitro = input.okHeld;
-    float currentSpeed = _nitro ? (_speed * 1.6f) : _speed;
-    _speed = 90.0f + sqrtf(_score) * 1.8f;
-    if (_speed > 180.0f) _speed = 180.0f;
+    // Disable BOOT-hold turbo so holding BOOT to exit doesn't speed up traffic
+    _nitro = false;
+    _speed = 68.0f + sqrtf(_score) * 1.1f;
+    if (_speed > 130.0f) _speed = 130.0f;
+    float currentSpeed = _speed;
 
     // Smooth Car X position transition
     float targetX = getLaneX(_playerLane);
-    _playerX += (targetX - _playerX) * 14.0f * dt;
+    _playerX += (targetX - _playerX) * 16.0f * dt;
 
     // Road scrolling
     _roadOffset += currentSpeed * dt;
     if (_roadOffset >= 16.0f) _roadOffset -= 16.0f;
 
-    // Traffic Cars
+    // Traffic Cars (maximum 2 active at a time so at least 1 lane is ALWAYS open!)
+    int activeTraffic = 0;
+    for (int i = 0; i < 4; ++i) {
+      if (_traffic[i].active) activeTraffic++;
+    }
+
     for (int i = 0; i < 4; ++i) {
       if (!_traffic[i].active) {
-        if (random(0, 100) < 4) spawnTraffic(i);
+        if (activeTraffic < 2 && random(0, 100) < 2) {
+          spawnTraffic(i);
+          activeTraffic++;
+        }
       } else {
         _traffic[i].y += (currentSpeed - _traffic[i].speed) * dt;
 
         if (_traffic[i].y > SCREEN_HEIGHT + 20) {
           _traffic[i].active = false;
-          _score += _nitro ? 20 : 10;
+          _score += 15;
         }
 
-        // Collision Check with Player (Player Y = 104, H = 18, W = 14)
+        // Forgiving Collision Check with Player
         float tx = getLaneX(_traffic[i].lane);
-        if (_playerX < tx + 14.0f && _playerX + 14.0f > tx &&
-            104.0f < _traffic[i].y + 18.0f && 122.0f > _traffic[i].y) {
+        if (_playerX + 2.0f < tx + 12.0f && _playerX + 12.0f > tx + 2.0f &&
+            106.0f < _traffic[i].y + 16.0f && 120.0f > _traffic[i].y + 2.0f) {
           triggerGameOver();
           return;
         }

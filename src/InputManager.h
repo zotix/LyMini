@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include "esp_timer.h"
 #include "Config.h"
 #include "SystemSettings.h"
 
@@ -7,15 +8,16 @@ struct InputState {
   bool leftPressed     = false; // Just pressed this frame
   bool rightPressed    = false;
   bool okPressed       = false;
-  bool okShortReleased = false; // Released before hold threshold (1.2s)
+  bool okShortReleased = false; // Released before hold threshold
 
   bool leftHeld        = false; // Currently being held down
   bool rightHeld       = false;
   bool okHeld          = false;
 
   bool bothPressed     = false; // Left + Right pressed together
-  bool menuHold        = false; // OK held for > 1.2 seconds
-  uint8_t okHoldPct    = 0;     // 0..100% progress toward menuHold
+  bool menuHold        = false; // OK held for >= holdThresholdMs
+  uint8_t  okHoldPct   = 0;     // 0..100% progress toward menuHold
+  uint16_t okHoldRemMs = 0;     // Remaining ms until menuHold triggers
   bool anyActivity     = false; // Any button was touched or held
 };
 
@@ -26,10 +28,15 @@ private:
   bool _lastOk = false;
 
   uint32_t _okPressStartTime = 0;
+  uint32_t _okLastLowTime = 0;
   bool _okHoldTriggered = false;
 
   uint32_t _lastActivityMs = 0;
   uint32_t _ledOffTimeMs = 0;
+
+  static inline uint32_t nowRealMs() {
+    return (uint32_t)(esp_timer_get_time() / 1000ULL);
+  }
 
 public:
   void begin() {
@@ -38,26 +45,26 @@ public:
     pinMode(PIN_BTN_OK, INPUT_PULLUP);
     pinMode(PIN_STATUS_LED, OUTPUT);
     digitalWrite(PIN_STATUS_LED, LOW);
-    _lastActivityMs = millis();
+    _lastActivityMs = nowRealMs();
   }
 
   void triggerLed(uint32_t durationMs = 40) {
     if (!gSettings.data.led_enabled) return;
     digitalWrite(PIN_STATUS_LED, HIGH);
-    _ledOffTimeMs = millis() + durationMs;
+    _ledOffTimeMs = nowRealMs() + durationMs;
   }
 
   void resetIdleTimer() {
-    _lastActivityMs = millis();
+    _lastActivityMs = nowRealMs();
   }
 
   uint32_t getIdleSeconds() const {
-    return (millis() - _lastActivityMs) / 1000UL;
+    return (nowRealMs() - _lastActivityMs) / 1000UL;
   }
 
   InputState update(uint32_t holdThresholdMs = BOOT_HOLD_MENU_EXIT_MS) {
     InputState st;
-    uint32_t now = millis();
+    uint32_t now = nowRealMs();
     if (holdThresholdMs < 500) holdThresholdMs = 500;
 
     // Check LED timer
@@ -69,7 +76,14 @@ public:
     // Active LOW buttons
     bool rawLeft  = (digitalRead(PIN_BTN_LEFT) == LOW);
     bool rawRight = (digitalRead(PIN_BTN_RIGHT) == LOW);
-    bool curOk    = (digitalRead(PIN_BTN_OK) == LOW);
+    bool rawOk    = (digitalRead(PIN_BTN_OK) == LOW);
+
+    // Debounce BOOT (OK) button against micro-bounce while holding for 4 seconds:
+    // Keep curOk true for 80ms after the last LOW reading so contact chatter never resets the hold timer!
+    if (rawOk) {
+      _okLastLowTime = now;
+    }
+    bool curOk = rawOk || (_lastOk && (now - _okLastLowTime < 80));
 
     // Rotate Left/Right buttons with screen orientation when enabled:
     // Standard orientation is 270 deg (rot == 3) or 0 deg (rot == 0).
@@ -94,14 +108,15 @@ public:
       _okHoldTriggered = false;
     } else if (curOk && !_okHoldTriggered) {
       uint32_t heldMs = now - _okPressStartTime;
-      if (heldMs > 250) {
-        uint32_t span = (holdThresholdMs > 250) ? (holdThresholdMs - 250) : 250;
-        uint32_t p = ((heldMs - 250) * 100) / span;
+      if (heldMs > 200) {
+        uint32_t p = (heldMs * 100) / holdThresholdMs;
         st.okHoldPct = (p > 100) ? 100 : (uint8_t)p;
+        st.okHoldRemMs = (heldMs < holdThresholdMs) ? (uint16_t)(holdThresholdMs - heldMs) : 0;
       }
       if (heldMs >= holdThresholdMs) {
         st.menuHold = true;
         st.okHoldPct = 100;
+        st.okHoldRemMs = 0;
         _okHoldTriggered = true;
         triggerLed(150);
       }

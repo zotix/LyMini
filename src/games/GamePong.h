@@ -29,16 +29,16 @@ public:
     _newHighScore = false;
     _highScore = HighScoreStore::getHighScore(id());
 
-    _playerX = 64.0f - 12.0f;
-    _aiX = 64.0f - 12.0f;
+    _playerX = 64.0f - 16.0f;
+    _aiX = 64.0f - 11.0f;
     resetBall(1);
   }
 
   void resetBall(int dir) {
     _ballX = 64.0f;
     _ballY = 64.0f;
-    _ballVX = (random(0, 2) == 0 ? -45.0f : 45.0f);
-    _ballVY = dir * 65.0f;
+    _ballVX = (random(0, 2) == 0 ? -36.0f : 36.0f);
+    _ballVY = dir * 50.0f;
     for (int i = 0; i < 4; ++i) {
       _trailX[i] = _ballX;
       _trailY[i] = _ballY;
@@ -47,27 +47,27 @@ public:
 
   void update(const InputState& input, float dt) override {
     if (_isGameOver) {
-      if (input.okPressed || input.leftPressed || input.rightPressed) {
+      if (input.okShortReleased || input.leftPressed || input.rightPressed) {
         init();
       }
       return;
     }
 
-    // Player Paddle Movement
-    float pSpeed = 105.0f;
+    // Player Paddle Movement (Wider 32px paddle & faster response)
+    float pSpeed = 128.0f;
     if (input.leftHeld) _playerX -= pSpeed * dt;
     if (input.rightHeld) _playerX += pSpeed * dt;
     if (_playerX < 2.0f) _playerX = 2.0f;
-    if (_playerX > SCREEN_WIDTH - 26.0f) _playerX = SCREEN_WIDTH - 26.0f;
+    if (_playerX > SCREEN_WIDTH - 34.0f) _playerX = SCREEN_WIDTH - 34.0f;
 
-    // AI Paddle Tracking
-    float aiCenter = _aiX + 12.0f;
+    // AI Paddle Tracking (Slower so player can easily score)
+    float aiCenter = _aiX + 11.0f;
     float targetX = _ballX;
-    float aiSpeed = 70.0f + (_aiScore * 5.0f);
-    if (targetX < aiCenter - 2.0f) _aiX -= aiSpeed * dt;
-    else if (targetX > aiCenter + 2.0f) _aiX += aiSpeed * dt;
+    float aiSpeed = 44.0f + (_aiScore * 3.0f);
+    if (targetX < aiCenter - 3.0f) _aiX -= aiSpeed * dt;
+    else if (targetX > aiCenter + 3.0f) _aiX += aiSpeed * dt;
     if (_aiX < 2.0f) _aiX = 2.0f;
-    if (_aiX > SCREEN_WIDTH - 26.0f) _aiX = SCREEN_WIDTH - 26.0f;
+    if (_aiX > SCREEN_WIDTH - 24.0f) _aiX = SCREEN_WIDTH - 24.0f;
 
     // Shift ball trails
     for (int i = 3; i > 0; --i) {
@@ -90,26 +90,26 @@ public:
       _ballVX = -_ballVX;
     }
 
-    // Collision with Player Paddle (Bottom: Y = 118)
-    if (_ballVY > 0 && _ballY >= 115.0f && _ballY <= 120.0f) {
-      if (_ballX + 3.0f >= _playerX && _ballX <= _playerX + 24.0f) {
-        float hitOffset = (_ballX + 1.5f) - (_playerX + 12.0f);
-        _ballVY = -(_ballVY * 1.05f); // Speed up slightly
-        if (fabs(_ballVY) > 170.0f) _ballVY = -170.0f;
-        _ballVX = hitOffset * 6.5f;
+    // Collision with Player Paddle (Bottom: Y = 118, Width = 32)
+    if (_ballVY > 0 && _ballY >= 114.0f && _ballY <= 122.0f) {
+      if (_ballX + 4.0f >= _playerX && _ballX <= _playerX + 32.0f) {
+        float hitOffset = (_ballX + 2.0f) - (_playerX + 16.0f);
+        _ballVY = -(_ballVY * 1.03f);
+        if (fabs(_ballVY) > 130.0f) _ballVY = -130.0f;
+        _ballVX = hitOffset * 4.8f;
 
         _rallyCount++;
-        _score += 10 + (_rallyCount * 2);
+        _score += 15 + (_rallyCount * 2);
       }
     }
 
-    // Collision with AI Paddle (Top: Y = 20)
-    if (_ballVY < 0 && _ballY <= 24.0f && _ballY >= 19.0f) {
-      if (_ballX + 3.0f >= _aiX && _ballX <= _aiX + 24.0f) {
-        float hitOffset = (_ballX + 1.5f) - (_aiX + 12.0f);
-        _ballVY = -(_ballVY * 1.05f);
-        if (fabs(_ballVY) > 170.0f) _ballVY = 170.0f;
-        _ballVX = hitOffset * 6.5f;
+    // Collision with AI Paddle (Top: Y = 20, Width = 22)
+    if (_ballVY < 0 && _ballY <= 24.0f && _ballY >= 18.0f) {
+      if (_ballX + 4.0f >= _aiX && _ballX <= _aiX + 22.0f) {
+        float hitOffset = (_ballX + 2.0f) - (_aiX + 11.0f);
+        _ballVY = -(_ballVY * 1.03f);
+        if (fabs(_ballVY) > 130.0f) _ballVY = 130.0f;
+        _ballVX = hitOffset * 5.0f;
       }
     }
 
@@ -164,11 +164,11 @@ public:
     // Ball
     gfx.fillRect((int16_t)_ballX, (int16_t)_ballY, 4, 4, Color565::White);
 
-    // AI Paddle (Magenta)
-    gfx.fillRoundRect((int16_t)_aiX, 20, 24, 4, 2, Color565::Magenta);
+    // AI Paddle (Magenta, 22px)
+    gfx.fillRoundRect((int16_t)_aiX, 20, 22, 4, 2, Color565::Magenta);
 
-    // Player Paddle (Cyan)
-    gfx.fillRoundRect((int16_t)_playerX, 118, 24, 4, 2, Color565::Cyan);
+    // Player Paddle (Cyan, wider 32px)
+    gfx.fillRoundRect((int16_t)_playerX, 118, 32, 4, 2, Color565::Cyan);
 
     drawHud(gfx);
 

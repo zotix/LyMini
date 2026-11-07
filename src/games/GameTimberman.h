@@ -27,7 +27,7 @@ public:
 
   void init() override {
     _playerSide = 0; // Starts on left
-    _maxTime = 5.0f;
+    _maxTime = 7.5f; // Generous starting time
     _timeRemaining = _maxTime;
     _score = 0;
     _chopAnim = 0;
@@ -37,7 +37,7 @@ public:
     _highScore = HighScoreStore::getHighScore(id());
 
     for (int i = 0; i < 6; ++i) {
-      if (i < 2) _branches[i] = 0; // First 2 trunk pieces safe
+      if (i < 3) _branches[i] = 0; // First 3 trunk pieces safe
       else addBranch(i);
     }
 
@@ -45,9 +45,10 @@ public:
   }
 
   void addBranch(int index) {
-    uint8_t prev = (index > 0) ? _branches[index - 1] : 0;
-    if (prev != 0) {
-      _branches[index] = 0; // Don't allow 2 consecutive branches
+    uint8_t prev  = (index > 0) ? _branches[index - 1] : 0;
+    uint8_t prev2 = (index > 1) ? _branches[index - 2] : 0;
+    if (prev != 0 || (prev2 != 0 && random(0, 2) == 0)) {
+      _branches[index] = 0; // Space branches out for easier reaction
     } else {
       uint8_t r = random(0, 3);
       _branches[index] = r; // 0: none, 1: left, 2: right
@@ -87,8 +88,8 @@ public:
     }
 
     _score++;
-    // Add time back, scaling down as score increases
-    float timeGain = max(0.18f, 0.42f - (_score * 0.003f));
+    // Add generous time back
+    float timeGain = max(0.32f, 0.65f - (_score * 0.002f));
     _timeRemaining = min(_maxTime, _timeRemaining + timeGain);
   }
 
@@ -116,17 +117,17 @@ public:
       }
     }
 
-    // Controls: Left chops left, Right chops right, OK chops current side
+    // Controls: Left chops left, Right chops right, OK short release chops current side
     if (input.leftPressed) {
       chop(0);
     } else if (input.rightPressed) {
       chop(1);
-    } else if (input.okPressed) {
+    } else if (input.okShortReleased) {
       chop(_playerSide);
     }
 
-    // Drain timer
-    _timeRemaining -= dt;
+    // Drain timer slowly so player has plenty of time to think
+    _timeRemaining -= dt * 0.62f;
     if (_timeRemaining <= 0.0f) {
       _timeRemaining = 0.0f;
       triggerGameOver();

@@ -82,11 +82,27 @@ private:
       _curWeatherCityIdx = 0;
       return;
     }
-    for (int tries = 0; tries < gSettings.data.weather_count; ++tries) {
-      _curWeatherCityIdx = (_curWeatherCityIdx + 1) % gSettings.data.weather_count;
-      if (gPower.hasValidWeather(_curWeatherCityIdx)) return;
+    uint8_t validList[MAX_WEATHER_CITIES];
+    uint8_t validCnt = 0;
+    for (uint8_t i = 0; i < gSettings.data.weather_count; ++i) {
+      if (gPower.hasValidWeather(i)) {
+        validList[validCnt++] = i;
+      }
     }
-    _curWeatherCityIdx = 0;
+    if (validCnt == 0) {
+      _curWeatherCityIdx = 0;
+      return;
+    }
+    if (validCnt == 1) {
+      _curWeatherCityIdx = validList[0];
+      return;
+    }
+    // Randomly pick a location (preferring a different city if possible)
+    uint8_t pick = validList[random(0, validCnt)];
+    if (pick == _curWeatherCityIdx && validCnt > 1) {
+      pick = validList[(random(1, validCnt)) % validCnt];
+    }
+    _curWeatherCityIdx = pick;
   }
 
   void pickNextScreen(int8_t dir = 1) {
@@ -130,6 +146,88 @@ private:
     } else if (_currentScreen == 3 && _videoCount > 0) {
       if (gSettings.data.idle_random_mode) {
         _curVideoIdx = random(0, _videoCount);
+      } else {
+        _curVideoIdx = (_curVideoIdx + 1) % _videoCount;
+      }
+      openCurrentVideo();
+    }
+  }
+
+  // v0.2.3: Button A (Left) in Idle -> Cycle Clock & Weather Group (0: Digital, 4: Analog, 5: Flip, 1: Weather, 7: Clock+Weather)
+  void pickNextClockWeatherScreen() {
+    _liveBufferActive = false;
+    _photoLoaded = false;
+
+    const uint8_t cwGroup[5] = { 0, 4, 5, 1, 7 };
+    uint8_t list[5];
+    uint8_t cnt = 0;
+
+    // First try eligible screens in Clock & Weather group
+    for (uint8_t i = 0; i < 5; ++i) {
+      if (isScreenEligible(cwGroup[i])) list[cnt++] = cwGroup[i];
+    }
+    // If none are eligible yet (e.g. Wi-Fi/NTP not synced yet), allow cycling through enabled Clock & Weather screens manually
+    if (cnt == 0) {
+      uint8_t mask = gSettings.data.idle_enabled_mask;
+      for (uint8_t i = 0; i < 5; ++i) {
+        if (mask & (1 << cwGroup[i])) list[cnt++] = cwGroup[i];
+      }
+    }
+    if (cnt == 0) {
+      for (uint8_t i = 0; i < 5; ++i) list[cnt++] = cwGroup[i];
+    }
+
+    int curPos = -1;
+    for (uint8_t i = 0; i < cnt; ++i) {
+      if (list[i] == _currentScreen) { curPos = i; break; }
+    }
+    if (curPos < 0) {
+      _currentScreen = list[0];
+    } else {
+      _currentScreen = list[(curPos + 1) % cnt];
+    }
+
+    if (_currentScreen == 1 || _currentScreen == 7) {
+      advanceWeatherCity();
+    }
+  }
+
+  // v0.2.3: Button B (Right) in Idle -> Cycle Media Gallery Group (2: Photo Frame, 3: Video Animation, 6: PromptPay QR)
+  void pickNextMediaGalleryScreen() {
+    _liveBufferActive = false;
+    _photoLoaded = false;
+
+    const uint8_t mediaGroup[3] = { 2, 3, 6 };
+    uint8_t list[3];
+    uint8_t cnt = 0;
+    uint8_t mask = gSettings.data.idle_enabled_mask | IDLE_MASK_ABOUT_QR;
+
+    for (uint8_t i = 0; i < 3; ++i) {
+      if (mask & (1 << mediaGroup[i])) list[cnt++] = mediaGroup[i];
+    }
+    if (cnt == 0) {
+      list[cnt++] = 6;
+    }
+
+    int curPos = -1;
+    for (uint8_t i = 0; i < cnt; ++i) {
+      if (list[i] == _currentScreen) { curPos = i; break; }
+    }
+    if (curPos < 0) {
+      _currentScreen = list[0];
+    } else {
+      _currentScreen = list[(curPos + 1) % cnt];
+    }
+
+    if (_currentScreen == 2 && _photoCount > 0) {
+      if (gSettings.data.idle_random_mode && _photoCount > 1) {
+        _curPhotoIdx = (_curPhotoIdx + random(1, _photoCount)) % _photoCount;
+      } else {
+        _curPhotoIdx = (_curPhotoIdx + 1) % _photoCount;
+      }
+    } else if (_currentScreen == 3 && _videoCount > 0) {
+      if (gSettings.data.idle_random_mode && _videoCount > 1) {
+        _curVideoIdx = (_curVideoIdx + random(1, _videoCount)) % _videoCount;
       } else {
         _curVideoIdx = (_curVideoIdx + 1) % _videoCount;
       }
@@ -298,14 +396,14 @@ public:
       pickNextScreen(0);
     }
 
-    // Manual Left / Right switching between Idle screens
+    // v0.2.3: Button A (leftPressed) = Clock & Weather group | Button B (rightPressed) = Media Gallery group
     if (input.leftPressed) {
-      _liveHoldUntilMs = 0;
-      pickNextScreen(-1);
+      _liveHoldUntilMs = millis() + 15000UL;
+      pickNextClockWeatherScreen();
       _screenTimer = millis();
     } else if (input.rightPressed) {
-      _liveHoldUntilMs = 0;
-      pickNextScreen(1);
+      _liveHoldUntilMs = millis() + 15000UL;
+      pickNextMediaGalleryScreen();
       _screenTimer = millis();
     }
 

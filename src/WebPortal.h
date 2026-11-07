@@ -160,9 +160,23 @@ public:
       _server.send(200, "text/plain", "OK");
     });
 
+    // 3b. Instant Auto-Update Eco / Idle Power-Saving Brightness Endpoint
+    _server.on("/api/eco_brightness", HTTP_POST, [this]() {
+      gPower.notifyWebActivity();
+      if (_server.hasArg("val")) {
+        uint8_t val = constrain(_server.arg("val").toInt(), 5, 100);
+        gPower.applyEcoBrightnessNow(val, _display);
+        if (_server.hasArg("save") && _server.arg("save").toInt() == 1) {
+          gSettings.save();
+        }
+      }
+      _server.send(200, "text/plain", "OK");
+    });
+
     // 4. Preview Any Idle Screen Immediately on ESP32 Display
     _server.on("/api/preview_idle", HTTP_POST, [this]() {
       gPower.notifyWebActivity();
+      gPower.wakeForLiveView(_display);
       if (_idle && _server.hasArg("scr")) {
         uint8_t scr = (uint8_t)_server.arg("scr").toInt();
         int8_t cityIdx = _server.hasArg("cityIdx") ? (int8_t)_server.arg("cityIdx").toInt() : -1;
@@ -180,6 +194,7 @@ public:
 
     _server.on("/api/show_qr", HTTP_POST, [this]() {
       gPower.notifyWebActivity();
+      gPower.wakeForLiveView(_display);
       if (_idle) {
         _idle->showPromptPayQrNow();
         _requestEnterIdle = true;
@@ -208,6 +223,7 @@ public:
       json += "\"idleTimeout\":" + String(gSettings.data.idle_timeout_sec) + ",";
       json += "\"idleCycle\":" + String(gSettings.data.idle_cycle_sec) + ",";
       json += "\"bright\":" + String(gSettings.data.brightness) + ",";
+      json += "\"ecoBright\":" + String(gSettings.data.eco_brightness) + ",";
       json += "\"rot\":" + String(gSettings.data.screen_rotation) + ",";
       json += "\"btnRot\":" + String(gSettings.data.btn_rotate_with_screen) + ",";
       json += "\"bgr\":" + String(gSettings.data.color_order_bgr) + ",";
@@ -240,6 +256,7 @@ public:
     // 7. Real-Time Live Frame Streaming to ESP32 Screen (/api/liveframe)
     _server.on("/api/liveframe", HTTP_POST, [this]() {
       gPower.notifyWebActivity();
+      gPower.wakeForLiveView(_display);
       if (_display && _idle) {
         _idle->activateLiveViewBuffer();
         _requestEnterIdle = true;
@@ -260,9 +277,19 @@ public:
       }
     });
 
+    // 7b. Stop Studio Live View when switching away from Studio Tab
+    _server.on("/api/stop_live", HTTP_POST, [this]() {
+      gPower.notifyWebActivity();
+      if (_idle) {
+        _idle->clearLiveViewBuffer();
+      }
+      _server.send(200, "text/plain", "OK");
+    });
+
     // 8. Upload Photo (.rgb) or Video (.mvid) and immediately display/play on ESP32
     _server.on("/api/upload", HTTP_POST, [this]() {
       gPower.notifyWebActivity();
+      gPower.wakeForLiveView(_display);
       if (_uploadFile) _uploadFile.close();
       if (_idle && _lastUploadedPath.length() > 0) {
         _idle->clearLiveViewBuffer();
@@ -306,6 +333,7 @@ public:
     // 8b. Reliable Frame-by-Frame Video Upload Pipeline (/api/upload_init -> /api/upload_frame -> /api/upload_finish)
     _server.on("/api/upload_init", HTTP_POST, [this]() {
       gPower.notifyWebActivity();
+      gPower.wakeForLiveView(_display);
       if (_uploadFile) _uploadFile.close();
       if (_idle) {
         _idle->clearLiveViewBuffer();
@@ -336,6 +364,7 @@ public:
 
     _server.on("/api/upload_frame", HTTP_POST, [this]() {
       gPower.notifyWebActivity();
+      gPower.wakeForLiveView(_display);
       if (_uploadFile) _uploadFile.flush();
       if (_display && _idle) {
         _idle->activateLiveViewBuffer();
@@ -363,6 +392,7 @@ public:
 
     _server.on("/api/upload_finish", HTTP_POST, [this]() {
       gPower.notifyWebActivity();
+      gPower.wakeForLiveView(_display);
       if (_uploadFile) {
         _uploadFile.flush();
         _uploadFile.close();
@@ -378,6 +408,7 @@ public:
     // 9. Show specific file immediately on ESP32 screen
     _server.on("/api/show", HTTP_POST, [this]() {
       gPower.notifyWebActivity();
+      gPower.wakeForLiveView(_display);
       if (_server.hasArg("path") && _idle) {
         _idle->clearLiveViewBuffer();
         _idle->showSpecificMedia(_server.arg("path").c_str());
@@ -480,6 +511,9 @@ public:
         uint8_t b = constrain(_server.arg("bright").toInt(), 5, 100);
         gPower.applyMaxBrightnessNow(b, _display);
       }
+      if (_server.hasArg("ecobri")) {
+        gSettings.data.eco_brightness = constrain(_server.arg("ecobri").toInt(), 5, 100);
+      }
       if (_server.hasArg("rot")) {
         gSettings.data.screen_rotation = _server.arg("rot").toInt() & 3;
       }
@@ -502,7 +536,7 @@ public:
         gSettings.data.night_end_hour = _server.arg("night_ed").toInt() % 24;
       }
       if (_server.hasArg("idletime")) {
-        gSettings.data.idle_timeout_sec = constrain(_server.arg("idletime").toInt(), 15, 600);
+        gSettings.data.idle_timeout_sec = constrain(_server.arg("idletime").toInt(), 10, 600);
       }
       if (_server.hasArg("idlecyc")) {
         gSettings.data.idle_cycle_sec = constrain(_server.arg("idlecyc").toInt(), 5, 120);

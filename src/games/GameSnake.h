@@ -24,7 +24,7 @@ public:
     _length = 4;
     _dir = 1; // Moving Right
     _stepTimer = 0.0f;
-    _stepDelay = 0.16f; // sec per grid step
+    _stepDelay = 0.22f; // Slower, easier step speed
     _score = 0;
     _isGameOver = false;
     _newHighScore = false;
@@ -70,8 +70,8 @@ public:
       _dir = (_dir + 1) % 4;
     }
 
-    // Hold OK to sprint
-    float currentDelay = input.okHeld ? (_stepDelay * 0.5f) : _stepDelay;
+    // Normal relaxed pace (BOOT hold sprint disabled so holding BOOT to exit is safe)
+    float currentDelay = _stepDelay;
 
     _stepTimer += dt;
     if (_stepTimer >= currentDelay) {
@@ -84,11 +84,11 @@ public:
       else if (_dir == 2) nextHead.y++;
       else if (_dir == 3) nextHead.x--;
 
-      // Wall collision (Grid is 0 to 17 in X, 0 to 15 in Y)
-      if (nextHead.x < 1 || nextHead.x > 16 || nextHead.y < 1 || nextHead.y > 14) {
-        triggerGameOver();
-        return;
-      }
+      // Wrap-around walls so hitting the border doesn't kill the player!
+      if (nextHead.x < 1)  nextHead.x = 16;
+      if (nextHead.x > 16) nextHead.x = 1;
+      if (nextHead.y < 1)  nextHead.y = 14;
+      if (nextHead.y > 14) nextHead.y = 1;
 
       // Self collision
       for (int i = 0; i < _length; ++i) {
@@ -106,9 +106,9 @@ public:
 
       // Eat Food
       if (nextHead.x == _food.x && nextHead.y == _food.y) {
-        _score += 10;
+        _score += 15;
         if (_length < 63) _length++;
-        if (_stepDelay > 0.08f) _stepDelay -= 0.003f;
+        if (_stepDelay > 0.12f) _stepDelay -= 0.002f;
         spawnFood();
       }
     }

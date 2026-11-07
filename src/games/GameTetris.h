@@ -15,6 +15,7 @@ private:
 
   float _dropTimer;
   float _dropDelay;
+  float _moveRepeatTimer;
   uint16_t _linesCleared;
 
   // Tetromino shapes definitions: 7 pieces, 4 rotations, 4x4 matrix
@@ -37,7 +38,8 @@ public:
     _score = 0;
     _linesCleared = 0;
     _dropTimer = 0.0f;
-    _dropDelay = 0.65f;
+    _dropDelay = 0.85f; // Slower & easier falling speed
+    _moveRepeatTimer = 0.0f;
     _isGameOver = false;
     _newHighScore = false;
     _highScore = HighScoreStore::getHighScore(id());
@@ -112,9 +114,9 @@ public:
 
     if (clearedInStep > 0) {
       _linesCleared += clearedInStep;
-      uint16_t linePoints[5] = { 0, 40, 100, 300, 1200 };
+      uint16_t linePoints[5] = { 0, 50, 120, 350, 1200 };
       _score += linePoints[clearedInStep];
-      if (_dropDelay > 0.15f) _dropDelay -= (clearedInStep * 0.02f);
+      if (_dropDelay > 0.28f) _dropDelay -= (clearedInStep * 0.012f);
     }
 
     spawnPiece();
@@ -136,16 +138,19 @@ public:
       return;
     }
 
-    // Move Left / Right
-    if (input.leftPressed) {
+    // Move Left / Right (supports both tap and smooth hold auto-repeat)
+    _moveRepeatTimer -= dt;
+    if (input.leftPressed || (input.leftHeld && !input.rightHeld && _moveRepeatTimer <= 0.0f)) {
       if (!checkCollision(_curPiece, _curRot, _curX - 1, _curY)) _curX--;
+      _moveRepeatTimer = input.leftPressed ? 0.22f : 0.10f;
     }
-    if (input.rightPressed) {
+    if (input.rightPressed || (input.rightHeld && !input.leftHeld && _moveRepeatTimer <= 0.0f)) {
       if (!checkCollision(_curPiece, _curRot, _curX + 1, _curY)) _curX++;
+      _moveRepeatTimer = input.rightPressed ? 0.22f : 0.10f;
     }
 
-    // Rotate Piece (OK Button short press)
-    if (input.okPressed && !input.bothPressed) {
+    // Rotate Piece (OK Button short release so holding BOOT to exit doesn't rotate or drop!)
+    if (input.okShortReleased && !input.bothPressed) {
       int8_t nextRot = (_curRot + 1) % 4;
       if (!checkCollision(_curPiece, nextRot, _curX, _curY)) {
         _curRot = nextRot;
@@ -154,6 +159,9 @@ public:
         _curRot = nextRot;
       } else if (!checkCollision(_curPiece, nextRot, _curX + 1, _curY)) {
         _curX++;
+        _curRot = nextRot;
+      } else if (!checkCollision(_curPiece, nextRot, _curX - 2, _curY)) {
+        _curX -= 2;
         _curRot = nextRot;
       }
     }
@@ -165,11 +173,9 @@ public:
       return;
     }
 
-    // Soft Drop (Hold OK)
-    float curDropDelay = input.okHeld ? 0.05f : _dropDelay;
-
+    // Normal gravity drop ONLY (BOOT hold fast-drop disabled as requested!)
     _dropTimer += dt;
-    if (_dropTimer >= curDropDelay) {
+    if (_dropTimer >= _dropDelay) {
       _dropTimer = 0.0f;
       if (!checkCollision(_curPiece, _curRot, _curX, _curY + 1)) {
         _curY++;
