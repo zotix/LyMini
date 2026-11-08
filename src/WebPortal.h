@@ -218,10 +218,12 @@ public:
       json += "\"weatherValid\":" + String(gPower.hasValidWeather() ? "true" : "false") + ",";
       json += "\"fsTotalKB\":" + String(totalKB) + ",";
       json += "\"fsUsedKB\":" + String(usedKB) + ",";
+      json += "\"cpuMhz\":" + String(gPower.getCpuMhz()) + ",";
       json += "\"idleMask\":" + String(gSettings.data.idle_enabled_mask | IDLE_MASK_ABOUT_QR) + ",";
       json += "\"idleRandom\":" + String(gSettings.data.idle_random_mode) + ",";
       json += "\"idleLockQr\":" + String(gSettings.data.idle_lock_qr) + ",";
       json += "\"idleTimeout\":" + String(gSettings.data.idle_timeout_sec) + ",";
+      json += "\"ecoTimeout\":" + String(gSettings.data.eco_timeout_sec) + ",";
       json += "\"idleCycle\":" + String(gSettings.data.idle_cycle_sec) + ",";
       json += "\"bright\":" + String(gSettings.data.brightness) + ",";
       json += "\"ecoBright\":" + String(gSettings.data.eco_brightness) + ",";
@@ -546,7 +548,10 @@ public:
         gSettings.data.night_end_hour = _server.arg("night_ed").toInt() % 24;
       }
       if (_server.hasArg("idletime")) {
-        gSettings.data.idle_timeout_sec = constrain(_server.arg("idletime").toInt(), 10, 600);
+        gSettings.data.idle_timeout_sec = constrain(_server.arg("idletime").toInt(), 5, 600);
+      }
+      if (_server.hasArg("ecotime")) {
+        gSettings.data.eco_timeout_sec = constrain(_server.arg("ecotime").toInt(), 30, 3600);
       }
       if (_server.hasArg("idlecyc")) {
         gSettings.data.idle_cycle_sec = constrain(_server.arg("idlecyc").toInt(), 5, 120);

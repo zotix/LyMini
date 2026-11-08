@@ -44,12 +44,13 @@ struct SystemSettingsData {
   int timezone_offset= 7;          // UTC+7 (Thailand)
   
   uint8_t brightness = 85;         // 5-100% Max Brightness ceiling
-  uint8_t eco_brightness = 35;     // 5-100% Idle / Eco Power-Saving Brightness
+  uint8_t eco_brightness = 25;     // 5-100% Eco Power-Saving Brightness (25% at >= 5 min)
   uint8_t screen_rotation = 3;     // 0=0°, 1=90°, 2=180°, 3=270° (Default in v0.2.2)
   uint8_t btn_rotate_with_screen = 1; // 1=Rotate Left/Right buttons with screen orientation
   uint8_t color_order_bgr = 1;     // 1=BGR (ST7735 GREENTAB3 standard with MSB swap), 0=RGB
 
   uint16_t idle_timeout_sec = 30;  // Default 30 seconds
+  uint16_t eco_timeout_sec  = 300; // Default 300 seconds (5 mins)
   uint16_t idle_cycle_sec   = 12;  // Seconds per idle screen
   uint8_t idle_enabled_mask = IDLE_MASK_ALL;
   uint8_t idle_random_mode  = 1;   // 1 = Random screen & media, 0 = Sequential
@@ -151,11 +152,12 @@ public:
 
       data.timezone_offset        = prefs.getInt("tz", 7);
       data.brightness             = constrain(prefs.getUChar("bright", 85), 5, 100);
-      data.eco_brightness         = constrain(prefs.getUChar("ecobri", 35), 5, 100);
+      data.eco_brightness         = constrain(prefs.getUChar("ecobri", 25), 5, 100);
       data.screen_rotation        = prefs.getUChar("rot2", 3); // Default 3 (270 deg in v0.2.2)
       data.btn_rotate_with_screen = prefs.getUChar("btnrot", 1);
       data.color_order_bgr        = prefs.getUChar("bgr", 1);
       data.idle_timeout_sec       = prefs.getUShort("idletime2", 30);
+      data.eco_timeout_sec        = prefs.getUShort("ecotime", 300);
       data.idle_cycle_sec         = prefs.getUShort("idlecyc", 12);
       data.idle_enabled_mask      = prefs.getUChar("idlemask3", IDLE_MASK_ALL);
       // PromptPay QR is mandatory and cannot be unchecked
@@ -224,6 +226,7 @@ public:
       prefs.putUChar("btnrot", data.btn_rotate_with_screen);
       prefs.putUChar("bgr", data.color_order_bgr);
       prefs.putUShort("idletime2", data.idle_timeout_sec);
+      prefs.putUShort("ecotime", data.eco_timeout_sec);
       prefs.putUShort("idlecyc", data.idle_cycle_sec);
       prefs.putUChar("idlemask3", data.idle_enabled_mask);
       prefs.putUChar("idlernd", data.idle_random_mode);

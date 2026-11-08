@@ -7,7 +7,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>LyMini Arcade & Smart TV v0.2.4</title>
+<title>LyMini Arcade & Smart TV v0.2.5</title>
 <style>
   :root {
     --bg: #0b0f17;
@@ -97,7 +97,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 <div class="container">
   <div class="topbar">
     <div>
-      <h1>🕹️ LyMini <span class="badge">v0.2.4</span> <span id="connBadge" class="badge online">🟢 Online</span></h1>
+      <h1>🕹️ LyMini <span class="badge">v0.2.5</span> <span id="connBadge" class="badge online">🟢 Online</span></h1>
       <div class="hint" id="statusText">IP: <b>192.168.4.1</b> | <b>http://lymini.local</b></div>
     </div>
     <div style="display:flex; gap:6px; align-items:center;">
@@ -221,9 +221,15 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 
       <div class="row">
         <div>
-          <label data-i18n="id_timeout">เข้า Idle เมื่อไม่กดปุ่ม (วินาที):</label>
-          <input type="number" id="inpIdleTime" min="10" max="600" value="30" />
+          <label data-i18n="id_timeout">เข้า Idle (40MHz / แสง 50%) เมื่อไม่กดปุ่ม (วินาที):</label>
+          <input type="number" id="inpIdleTime" min="5" max="600" value="30" />
         </div>
+        <div>
+          <label data-i18n="eco_timeout">เข้า Eco (20MHz / แสง 25%) เมื่อไม่กดปุ่ม (วินาที):</label>
+          <input type="number" id="inpEcoTime" min="30" max="3600" value="300" />
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;">
         <div>
           <label data-i18n="id_cycle">สลับหน้าทุกๆ (วินาที):</label>
           <input type="number" id="inpIdleCycle" min="5" max="120" value="12" />
@@ -263,10 +269,10 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <h2 style="margin:0; color:var(--green);" data-i18n="ec_title">🔋 ความสว่างช่วงประหยัดพลังงาน / พักหน้าจอ (Eco Brightness)</h2>
-        <span id="ecoBriValueBadge" class="badge" style="font-size:14px; color:var(--green);">35%</span>
+        <span id="ecoBriValueBadge" class="badge" style="font-size:14px; color:var(--green);">25%</span>
       </div>
-      <p class="hint" data-i18n="ec_desc">เลื่อนแถบเพื่อตั้งค่าความสว่างเมื่ออยู่ในโหมดพักหน้าจอ (Idle) แบบเรียลไทม์ (ไม่เกินค่า Max Brightness)</p>
-      <input type="range" id="rngEcoBright" min="5" max="100" value="35" style="margin-top:10px; accent-color:var(--green);" />
+      <p class="hint" data-i18n="ec_desc">เลื่อนแถบเพื่อตั้งค่าความสว่างเมื่ออยู่ในโหมดประหยัดพลังงาน Eco (>= 5 นาที) แบบเรียลไทม์ (ไม่เกินค่า Max Brightness)</p>
+      <input type="range" id="rngEcoBright" min="5" max="100" value="25" style="margin-top:10px; accent-color:var(--green);" />
       <div class="row">
         <button type="button" class="sm green" onclick="setQuickEcoBri(10)">10%</button>
         <button type="button" class="sm green" onclick="setQuickEcoBri(25)">25%</button>
@@ -409,7 +415,8 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       id_qr: '☕ Buy Me a Coffee (PromptPay QR — เปิดแสดงเสมอ)',
       id_lock_qr: '🔒 ล็อกหน้าจอ Idle ให้แสดงเฉพาะ PromptPay QR Code ตลอดเวลา',
       id_random: '🔀 Random Mode (สุ่มลำดับหน้าจอ และสุ่มรูปภาพ/วิดีโอ)',
-      id_timeout: 'เข้า Idle เมื่อไม่กดปุ่ม (วินาที):',
+      id_timeout: 'เข้าสู่ Idle Display (40MHz / แสง 50%) เมื่อไม่กดปุ่ม (วินาที):',
+      eco_timeout: 'เข้าสู่ Eco Display (20MHz / แสง 25%) เมื่อไม่กดปุ่ม (วินาที):',
       id_cycle: 'สลับหน้าทุกๆ (วินาที):',
       gal_title: '📂 คลังภาพและวิดีโอในบอร์ด (LittleFS)',
       gal_hint: 'ติ๊กถูกเพื่อเปิดแสดงในรอบ Idle หรือกด 👁️ เพื่อยิงขึ้นจอ LyMini ทันที',
@@ -474,7 +481,8 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       id_qr: '☕ Buy Me a Coffee (PromptPay QR — Always Active)',
       id_lock_qr: '🔒 Lock Idle Screen on PromptPay QR Code only',
       id_random: '🔀 Random Mode (Shuffle screens, photos & videos)',
-      id_timeout: 'Enter Idle after inactivity (sec):',
+      id_timeout: 'Enter Idle Display (40MHz / 50% Bri) after inactivity (sec):',
+      eco_timeout: 'Enter Eco Display (20MHz / 25% Bri) after inactivity (sec):',
       id_cycle: 'Cycle screen every (sec):',
       gal_title: '📂 On-Board Media Gallery (LittleFS)',
       gal_hint: 'Check to enable in Idle rotation, or click 👁️ to display immediately on LyMini',
@@ -1186,6 +1194,9 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 
       document.getElementById('chkRandom').checked      = st.idleRandom === 1;
       document.getElementById('inpIdleTime').value      = st.idleTimeout;
+      if (st.ecoTimeout !== undefined) {
+        document.getElementById('inpEcoTime').value     = st.ecoTimeout;
+      }
       document.getElementById('inpIdleCycle').value     = st.idleCycle;
 
       rngBright.value = st.bright;
@@ -1289,6 +1300,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       idlemask: mask,
       idlernd: document.getElementById('chkRandom').checked ? 1 : 0,
       idletime: document.getElementById('inpIdleTime').value,
+      ecotime: document.getElementById('inpEcoTime').value,
       idlecyc: document.getElementById('inpIdleCycle').value,
       bright: rngBright.value,
       ecobri: rngEcoBright.value,

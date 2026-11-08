@@ -9,7 +9,7 @@
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non--Commercial-red.svg)](LICENSE)
 [![Platform: ESP32-C3](https://img.shields.io/badge/Platform-ESP32--C3-yellow.svg)](https://www.espressif.com/en/products/socs/esp32-c3)
 [![Framework: Arduino](https://img.shields.io/badge/Framework-Arduino-blue.svg)](https://www.arduino.cc/)
-[![Version: v0.2.4](https://img.shields.io/badge/Version-v0.2.4-green.svg)](https://github.com/zotix/LyMini/releases)
+[![Version: v0.2.5](https://img.shields.io/badge/Version-v0.2.5-green.svg)](https://github.com/zotix/LyMini/releases)
 
 </div>
 
@@ -43,8 +43,17 @@ Built with a custom zero-flicker 16-bit RGB565 framebuffer engine running over 4
   - Connect to the open **`LyMini-AP`** Wi-Fi hotspot (no password required) for automatic Captive Portal popup, or access via `http://lymini.local`.
   - **✂️ 128×128 Media Studio**: Supports photos (`.JPG`, `.PNG`, `.WEBP`, `.HEIC`) and iOS/Android videos (`.MOV`, `.MP4`) with touch pan, pinch-to-zoom, live streaming to the ESP32 screen, and LittleFS storage.
   - **🔆 Auto-Update Max Brightness Ceiling**: Real-time slider immediately updates the screen brightness and sets the maximum brightness ceiling.
+  - **⚡ Dynamic CPU & Inactivity Timeout Configuration**: Set both Idle (40 MHz / 50% Bri) and Eco (20 MHz / 25% Bri) timeouts directly from the web interface, saved permanently to NVS.
   - **🔄 Smart Screen & Button Rotation**: Default 270° landscape orientation (`0° / 90° / 180° / 270°` selectable) with automatic Left/Right button direction flipping.
   - **🌙 Night Mode Screen-Off Schedule**: Automatically turns off the backlight (`0%`) during scheduled night hours and wakes on any button press.
+- ⚡ **Dynamic CPU Scaling & Multi-Stage Power Saving (v0.2.5)**:
+  - **Active Gameplay / Menu / Wi-Fi**: Boosts CPU to **160 MHz** with full 60 FPS pacing and user-set brightness.
+  - **Idle Display (Smart TV)**: At 30s inactivity (customizable), scales CPU down to **40 MHz** (direct crystal clock with PLL off) and **50% brightness** (24 FPS).
+  - **Eco Battery Saver**: At 5 min inactivity (customizable), scales CPU down to **20 MHz** and **25% brightness** (15 FPS) for extreme battery preservation.
+  - **Instant Boost**: Touching any button instantly revs the CPU back to **160 MHz** and restores full brightness.
+- ℹ️ **Launcher About & Support Screen (11th Menu Card)**:
+  - Convenient menu card displaying current firmware version (**v0.2.5**) and platform hardware.
+  - Pressing **BOOT (OK)** opens a full-screen, pixel-perfect 112×112 PromptPay QR code for developer donations, with instant one-click return to menu.
 
 ---
 

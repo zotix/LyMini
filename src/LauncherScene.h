@@ -8,6 +8,7 @@
 #include "HighScoreStore.h"
 #include "PowerManager.h"
 #include "SystemSettings.h"
+#include "PromptPayQrAsset.h"
 
 #define LAUNCH_NONE     -1
 #define LAUNCH_IDLE_TV  -2
@@ -17,10 +18,29 @@ private:
   int8_t _selectedIndex;
   float  _animOffset;
   bool   _adjustingBri;
+  bool   _viewingSupport;
   GameRegistry& _registry;
 
+  static inline uint16_t expandRgb332(uint8_t c) {
+    uint8_t r3 = (c >> 5) & 0x07;
+    uint8_t g3 = (c >> 2) & 0x07;
+    uint8_t b2 = c & 0x03;
+    uint16_t r5 = (r3 << 2) | (r3 >> 1);
+    uint16_t g6 = (g3 << 3) | g3;
+    uint16_t b5 = (b2 << 3) | (b2 << 1) | (b2 >> 1);
+    return (r5 << 11) | (g6 << 5) | b5;
+  }
+
   int8_t getTotalItems() const {
-    return _registry.getCount() + 1; // 9 Games + 1 Brightness Settings Card = 10 items
+    return _registry.getCount() + 2; // 9 Games + 1 Brightness Settings Card + 1 About/Support Card = 11 items
+  }
+
+  inline bool isBriCard(int8_t idx) const {
+    return (idx == _registry.getCount());
+  }
+
+  inline bool isAboutCard(int8_t idx) const {
+    return (idx == _registry.getCount() + 1);
   }
 
   void drawStatusBar(DisplayCanvas& gfx) {
@@ -233,8 +253,52 @@ private:
     gfx.fillRect(x + 37, y + 24, fw, 6, Color565::Lime);
   }
 
+  void drawAboutCardArt(DisplayCanvas& gfx, int16_t x, int16_t y) {
+    gfx.fillRoundRect(x, y, 86, 42, 4, Color565::rgb(14, 18, 36));
+    gfx.drawRoundRect(x, y, 86, 42, 4, Color565::Magenta);
+
+    // Mini QR emblem box on left
+    gfx.fillRoundRect(x + 5, y + 6, 24, 30, 2, Color565::rgb(24, 32, 56));
+    gfx.drawRoundRect(x + 5, y + 6, 24, 30, 2, Color565::NeonCyan);
+    // Draw cute mini QR grid
+    gfx.fillRect(x + 8,  y + 9,  5, 5, Color565::White);
+    gfx.fillRect(x + 20, y + 9,  5, 5, Color565::White);
+    gfx.fillRect(x + 8,  y + 21, 5, 5, Color565::White);
+    gfx.fillRect(x + 19, y + 21, 6, 5, Color565::Gold);
+    gfx.fillRect(x + 14, y + 28, 6, 5, Color565::Lime);
+
+    // Text on right side
+    gfx.drawText(x + 33, y + 7,  APP_VERSION, Color565::Gold);
+    gfx.drawText(x + 33, y + 18, "ESP32-C3", Color565::NeonCyan);
+    gfx.drawText(x + 33, y + 29, "SUPPORT", Color565::Lime);
+  }
+
+  void renderAboutQrPage(DisplayCanvas& gfx) {
+    // 1. Dark background
+    gfx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Color565::rgb(10, 20, 44));
+
+    // 2. Top Header Banner: "SUPPORT LYMINI v0.2.5"
+    gfx.fillRect(0, 0, SCREEN_WIDTH, 14, Color565::rgb(0, 62, 126));
+    gfx.drawCenteredText(3, "SUPPORT DEV (v" APP_VERSION ")", Color565::Gold);
+
+    // 3. PromptPay QR Code (112x112) centered at (8, 15)
+    const int16_t qx = 8;
+    const int16_t qy = 15;
+    uint16_t* dst = gfx.getBuffer();
+    for (int y = 0; y < PROMPTPAY_QR_SIZE; ++y) {
+      int16_t py = qy + y;
+      if (py < 0 || py >= SCREEN_HEIGHT) continue;
+      for (int x = 0; x < PROMPTPAY_QR_SIZE; ++x) {
+        int16_t px = qx + x;
+        if (px < 0 || px >= SCREEN_WIDTH) continue;
+        uint8_t c332 = pgm_read_byte(&PROMPTPAY_QR_332[y * PROMPTPAY_QR_SIZE + x]);
+        dst[py * SCREEN_WIDTH + px] = expandRgb332(c332);
+      }
+    }
+  }
+
 public:
-  LauncherScene(GameRegistry& reg) : _registry(reg), _selectedIndex(0), _animOffset(0.0f), _adjustingBri(false) {}
+  LauncherScene(GameRegistry& reg) : _registry(reg), _selectedIndex(0), _animOffset(0.0f), _adjustingBri(false), _viewingSupport(false) {}
 
   void init(int8_t initialIndex = 0) {
     _selectedIndex = initialIndex;
@@ -242,11 +306,20 @@ public:
     if (_selectedIndex >= getTotalItems()) _selectedIndex = getTotalItems() - 1;
     _animOffset = 0.0f;
     _adjustingBri = false;
+    _viewingSupport = false;
   }
 
   int8_t getSelectedIndex() const { return _selectedIndex; }
 
   int8_t update(const InputState& input, float dt, DisplayCanvas& display) {
+    // If inside Support / PromptPay QR Screen:
+    if (_viewingSupport) {
+      if (input.okShortReleased || input.leftPressed || input.rightPressed || input.menuHold) {
+        _viewingSupport = false;
+      }
+      return LAUNCH_NONE;
+    }
+
     // If inside Brightness Adjustment Mode:
     if (_adjustingBri) {
       if (input.leftPressed) {
@@ -288,10 +361,14 @@ public:
       return LAUNCH_IDLE_TV;
     }
 
-    // Short Press & Release BOOT -> Launch selected game or open Brightness adjuster!
+    // Short Press & Release BOOT -> Launch selected game, open Brightness adjuster, or open Support QR!
     if (input.okShortReleased) {
-      if (_selectedIndex == _registry.getCount()) {
+      if (isBriCard(_selectedIndex)) {
         _adjustingBri = true;
+        return LAUNCH_NONE;
+      }
+      if (isAboutCard(_selectedIndex)) {
+        _viewingSupport = true;
         return LAUNCH_NONE;
       }
       return _selectedIndex;
@@ -301,14 +378,20 @@ public:
   }
 
   void render(DisplayCanvas& gfx, uint8_t holdPct = 0) {
+    if (_viewingSupport) {
+      renderAboutQrPage(gfx);
+      return;
+    }
+
     gfx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Color565::rgb(10, 15, 26));
 
     drawStatusBar(gfx);
 
     int16_t cardX = 14 + (int16_t)_animOffset;
     int16_t cardY = 20;
-    bool isBriCard = (_selectedIndex == _registry.getCount());
-    uint16_t borderCol = isBriCard ? Color565::Gold : _registry.getGame(_selectedIndex)->themeColor();
+    bool isBri = isBriCard(_selectedIndex);
+    bool isAbt = isAboutCard(_selectedIndex);
+    uint16_t borderCol = isBri ? Color565::Gold : (isAbt ? Color565::Magenta : _registry.getGame(_selectedIndex)->themeColor());
 
     gfx.fillRoundRect(cardX, cardY, 100, 80, 6, Color565::rgb(25, 30, 50));
     gfx.drawRoundRect(cardX, cardY, 100, 80, 6, borderCol);
@@ -317,10 +400,14 @@ public:
     gfx.drawText(3,   56, "<", _adjustingBri ? Color565::Gold : Color565::NeonCyan);
     gfx.drawText(120, 56, ">", _adjustingBri ? Color565::Gold : Color565::NeonCyan);
 
-    if (isBriCard) {
+    if (isBri) {
       gfx.drawCenteredText(cardY + 6, "BRIGHTNESS", Color565::Gold);
       drawBrightnessCardArt(gfx, cardX + 7, cardY + 18);
       gfx.drawCenteredText(cardY + 65, _adjustingBri ? "<-/->:SET  OK:SAVE" : "PRESS OK TO ADJUST", Color565::Lime);
+    } else if (isAbt) {
+      gfx.drawCenteredText(cardY + 6, "ABOUT & SUPPORT", Color565::Magenta);
+      drawAboutCardArt(gfx, cardX + 7, cardY + 18);
+      gfx.drawCenteredText(cardY + 65, "PRESS OK: DONATE QR", Color565::Gold);
     } else {
       IGame* curGame = _registry.getGame(_selectedIndex);
       // Game Title at Top of Card
@@ -336,12 +423,13 @@ public:
       gfx.drawCenteredText(cardY + 65, hsBuf, Color565::Gold);
     }
 
-    // Page Indicator Dots (10 items)
+    // Page Indicator Dots (11 items)
     int8_t total = getTotalItems();
     int16_t dotsStartX = (SCREEN_WIDTH - (total * 7)) / 2;
     for (int8_t i = 0; i < total; ++i) {
       if (i == _selectedIndex) {
-        gfx.fillCircle(dotsStartX + i * 7 + 3, 106, 2, isBriCard ? Color565::Gold : Color565::NeonCyan);
+        uint16_t dotCol = isBriCard(i) ? Color565::Gold : (isAboutCard(i) ? Color565::Magenta : Color565::NeonCyan);
+        gfx.fillCircle(dotsStartX + i * 7 + 3, 106, 2, dotCol);
       } else {
         gfx.drawPixel(dotsStartX + i * 7 + 3, 106, Color565::GrayMid);
       }
@@ -357,6 +445,8 @@ public:
       gfx.drawCenteredText(117, "HOLD: ENTER TV MODE", Color565::White);
     } else if (_adjustingBri) {
       gfx.drawCenteredText(117, "A:-10% B:+10% OK:OK", Color565::Gold);
+    } else if (isAbt) {
+      gfx.drawCenteredText(117, "BOOT:VIEW PROMPTPAY", Color565::Gold);
     } else {
       gfx.drawCenteredText(117, "BOOT:OPEN  HOLD:IDLE", Color565::Lime);
     }

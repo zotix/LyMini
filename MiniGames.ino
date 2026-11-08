@@ -1,5 +1,5 @@
 // ============================================================================
-// LyMini ESP32-C3 1.44" ST7735 MiniGames & Smart Idle TV v0.2.4
+// LyMini ESP32-C3 1.44" ST7735 MiniGames & Smart Idle TV v0.2.5
 // 9-in-1 Arcade + Smart Idle TV + Power Manager + http://lymini.local
 // ============================================================================
 
@@ -19,7 +19,9 @@
 #include "src/WebPortal.h"
 #include "src/Font5x7.h"
 
-#define APP_VERSION "0.2.4"
+#ifndef APP_VERSION
+#define APP_VERSION "0.2.5"
+#endif
 
 // Global System Objects
 SystemSettings gSettings;
@@ -92,8 +94,18 @@ void loop() {
     gInput.resetIdleTimer();
   }
 
-  // 2. Frame pacing: 60 FPS (16.6ms) in Game/Menu, 24 FPS (41.6ms) in Idle to save power
-  uint32_t targetFrameUs = (gState == STATE_IDLE) ? 41666UL : 16666UL;
+  // 2. Frame pacing:
+  //    - Active Game / Menu: 60 FPS (16.6ms) @ 160 MHz
+  //    - Idle Display: 24 FPS (41.6ms) @ 40 MHz
+  //    - Eco Display (>= 5 min): 15 FPS (66.6ms) @ 20 MHz
+  uint32_t targetFrameUs = 16666UL;
+  if (gState == STATE_IDLE) {
+    if (gPower.isEcoMode(gInput.getIdleSeconds())) {
+      targetFrameUs = 66666UL; // 15 FPS in Eco mode (20 MHz)
+    } else {
+      targetFrameUs = 41666UL; // 24 FPS in Idle mode (40 MHz)
+    }
+  }
   uint32_t nowMicros = micros();
   uint32_t deltaMicros = nowMicros - gLastFrameTime;
   if (deltaMicros < targetFrameUs) {

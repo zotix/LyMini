@@ -9,7 +9,7 @@
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non--Commercial-red.svg)](LICENSE)
 [![Platform: ESP32-C3](https://img.shields.io/badge/Platform-ESP32--C3-yellow.svg)](https://www.espressif.com/en/products/socs/esp32-c3)
 [![Framework: Arduino](https://img.shields.io/badge/Framework-Arduino-blue.svg)](https://www.arduino.cc/)
-[![Version: v0.2.4](https://img.shields.io/badge/Version-v0.2.4-green.svg)](https://github.com/zotix/LyMini/releases)
+[![Version: v0.2.5](https://img.shields.io/badge/Version-v0.2.5-green.svg)](https://github.com/zotix/LyMini/releases)
 
 </div>
 
@@ -41,8 +41,17 @@
 - 🌐 **หน้าเว็บตั้งค่า 2 ภาษา ไทย/อังกฤษ (`http://lymini.local`)**:
   - เชื่อมต่อ Wi-Fi **`LyMini-AP`** (ไม่ต้องใช้รหัสผ่าน) หน้าเว็บตั้งค่าจะเด้งขึ้นมาอัตโนมัติ (Captive Portal)
   - **🔆 ปรับความสว่างสูงสุดแบบ Auto-Update**: เลื่อนแถบปุ๊บแสงหน้าจอเปลี่ยนตามทันที และทำหน้าที่เป็นเพดานความสว่างสูงสุด
+  - **⚡ ตั้งเวลาเข้าโหมด Idle & Eco บนหน้าเว็บ**: ปรับเวลาหน่วงก่อนเข้าสู่ Idle (40MHz / แสง 50%) และ Eco (20MHz / แสง 25%) ได้อิสระ พร้อมบันทึกลง NVS
   - **🔄 หมุนหน้าจอได้ 4 ทิศทาง (เริ่มต้น 270°)**: พร้อมระบบสลับปุ่มซ้าย/ขวาตามการหมุนหน้าจออัตโนมัติ
   - **🌙 ตั้งเวลาปิดไฟหน้าจอกลางคืน**: ปิดไฟ Backlight (`0%`) อัตโนมัติเมื่อถึงเวลานอน และตื่นทันทีเมื่อกดปุ่ม
+- ⚡ **ระบบ Dynamic CPU Boost & การประหยัดพลังงานหลายระดับ (v0.2.5)**:
+  - **Active (เล่นเกม / เมนู / Wi-Fi)**: วิ่งเต็มสปีด **160 MHz** เฟรมเรต 60 FPS ตอบสนองทันใจ
+  - **Idle Display (Smart TV)**: ไม่กดปุ่ม 30 วินาที $\rightarrow$ ปรับความถี่เหลือ **40 MHz** + ลดแสงเหลือ **50%** (24 FPS) ปิดวงจร PLL ใช้คริสตัลตรงๆ ประหยัดไฟ
+  - **Eco Display (โหมดกินไฟต่ำพิเศษ)**: พักหน้าจอครบ 5 นาที $\rightarrow$ ปรับความถี่เหลือ **20 MHz** + ลดแสงเหลือ **25%** (15 FPS) ยืดอายุแบตเตอรี่สูงสุด
+  - **Instant Boost**: สัมผัสปุ่มใดๆ จะดีดความเร็ว CPU กลับเป็น **160 MHz** และคืนความสว่างปกติทันที
+- ℹ️ **เมนู About & Support ในหน้า Launcher (เมนูลำดับที่ 11)**:
+  - การ์ดเมนูแสดงเลขเวอร์ชัน (**v0.2.5**) และข้อมูลสเปกบอร์ด ESP32-C3
+  - กดปุ่ม **BOOT (OK)** เพื่อเปิดหน้าจอแสดง PromptPay QR Code (112×112 พิกเซล) คมชัดระดับ 1:1 ให้สแกนเลี้ยงกาแฟผู้พัฒนาได้ทันที และกดปุ่มใดๆ เพื่อย้อนกลับสู่เมนูหลัก
 
 ---
 
