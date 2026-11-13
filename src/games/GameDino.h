@@ -19,16 +19,33 @@ private:
 
   float _gameSpeed;
   float _distance;
-  uint32_t _dayNightTimer;
   bool _isNight;
   uint8_t _animFrame;
   float _animTimer;
+
+  struct Dust {
+    float x, y, vx, vy, life;
+  };
+  Dust _dust[4];
 
 public:
   const char* id() const override { return "dino"; }
   const char* title() const override { return "Chrome Dino"; }
   const char* desc() const override { return "Jump & Duck obstacles!"; }
   uint16_t themeColor() const override { return Color565::Lime; }
+
+  void spawnDust(float x, float y, int count) {
+    for (int i = 0; i < 4 && count > 0; ++i) {
+      if (_dust[i].life <= 0.0f) {
+        _dust[i].x = x;
+        _dust[i].y = y;
+        _dust[i].vx = -random(20, 45);
+        _dust[i].vy = -random(10, 30);
+        _dust[i].life = 0.28f;
+        count--;
+      }
+    }
+  }
 
   void init() override {
     _dinoY = 96.0f;
@@ -41,7 +58,6 @@ public:
     _isGameOver = false;
     _newHighScore = false;
     _highScore = HighScoreStore::getHighScore(id());
-    _dayNightTimer = 0;
     _isNight = false;
     _animFrame = 0;
     _animTimer = 0;
@@ -50,6 +66,7 @@ public:
       _obstacles[i].active = false;
       _obstacles[i].x = 170.0f + i * 105.0f;
     }
+    for (int i = 0; i < 4; ++i) _dust[i].life = 0.0f;
   }
 
   void spawnObstacle(int index, float minX) {
@@ -82,18 +99,25 @@ public:
       return;
     }
 
-    // Animation timer
+    // Animation timer & running dust
     _animTimer += dt;
     if (_animTimer >= 0.1f) {
       _animTimer = 0.0f;
       _animFrame = (_animFrame + 1) % 2;
+      if (_isGrounded && random(0, 3) == 0) spawnDust(19.0f, 108.0f, 1);
     }
 
-    // Day/Night cycle every 500 score points
-    _dayNightTimer++;
-    if (_score > 0 && (_score % 500 == 0)) {
-      _isNight = !_isNight;
+    // Update dust particles
+    for (int i = 0; i < 4; ++i) {
+      if (_dust[i].life > 0.0f) {
+        _dust[i].life -= dt;
+        _dust[i].x += _dust[i].vx * dt;
+        _dust[i].y += _dust[i].vy * dt;
+      }
     }
+
+    // Day/Night cycle every 500 score points (milestone-based, no flicker)
+    _isNight = ((_score / 500) % 2 == 1);
 
     // Speed scales gently with distance
     _gameSpeed = 72.0f + sqrtf(_distance) * 1.5f;
@@ -103,6 +127,7 @@ public:
     if ((input.leftPressed || input.leftHeld || input.okShortReleased) && _isGrounded) {
       _dinoVY = -205.0f; // Higher, more forgiving jump impulse
       _isGrounded = false;
+      spawnDust(22.0f, 108.0f, 3);
     }
 
     // Duck Input (Right Button)
@@ -121,6 +146,7 @@ public:
         _dinoY = 96.0f;
         _dinoVY = 0.0f;
         _isGrounded = true;
+        spawnDust(22.0f, 108.0f, 3);
       }
     }
 
@@ -174,22 +200,34 @@ public:
   }
 
   void render(DisplayCanvas& gfx) override {
-    uint16_t skyColor = _isNight ? Color565::DeepBlue : Color565::Cyan;
-    uint16_t groundColor = _isNight ? Color565::GrayDark : Color565::Gold;
+    uint16_t groundColor = _isNight ? Color565::GrayMid : Color565::Gold;
     uint16_t dinoColor = _isNight ? Color565::Lime : Color565::rgb(40, 180, 50);
 
-    // Sky Background
-    gfx.fillRect(0, 12, SCREEN_WIDTH, SCREEN_HEIGHT - 12, skyColor);
+    // Gradient Sky Background
+    for (int16_t y = 12; y < 110; y += 4) {
+      uint8_t t = (y - 12) * 255 / 98;
+      uint16_t col = _isNight
+        ? Color565::rgb(6 + t / 25, 10 + t / 18, 28 + t / 10)
+        : Color565::rgb(20 + t / 4, 150 + t / 4, 235);
+      gfx.fillRect(0, y, SCREEN_WIDTH, 4, col);
+    }
+    gfx.fillRect(0, 110, SCREEN_WIDTH, SCREEN_HEIGHT - 110, _isNight ? Color565::rgb(22, 24, 34) : Color565::rgb(175, 130, 65));
 
-    // Stars / Sun / Moon
+    // Stars / Sun / Moon & Clouds
     if (_isNight) {
       gfx.drawPixel(20, 25, Color565::White);
+      gfx.drawPixel(45, 34, Color565::Cyan);
       gfx.drawPixel(60, 20, Color565::Yellow);
-      gfx.drawPixel(105, 30, Color565::White);
-      gfx.fillCircle(100, 22, 5, Color565::White);
-      gfx.fillCircle(98, 22, 4, Color565::DeepBlue); // Crescent moon
+      gfx.drawPixel(85, 38, Color565::White);
+      gfx.fillCircle(104, 24, 6, Color565::White);
+      gfx.fillCircle(101, 23, 5, Color565::rgb(8, 12, 30)); // Crescent moon
     } else {
-      gfx.fillCircle(108, 24, 6, Color565::Yellow); // Sun
+      gfx.fillCircle(108, 24, 6, Color565::Yellow);
+      int16_t cx1 = 128 - (((int)(_distance * 0.2f)) % 150);
+      gfx.fillRoundRect(cx1, 26, 22, 7, 3, Color565::White);
+      gfx.fillCircle(cx1 + 8, 25, 4, Color565::White);
+      int16_t cx2 = 128 - (((int)(_distance * 0.2f + 75)) % 150);
+      gfx.fillRoundRect(cx2, 42, 18, 6, 3, Color565::White);
     }
 
     // Ground line & terrain dashes
@@ -197,6 +235,13 @@ public:
     int16_t dashOffset = -((int)_distance % 12);
     for (int16_t x = dashOffset; x < SCREEN_WIDTH; x += 16) {
       gfx.drawFastHLine(x, 114, 6, groundColor);
+    }
+
+    // Dust particles
+    for (int i = 0; i < 4; ++i) {
+      if (_dust[i].life > 0.0f) {
+        gfx.fillRect((int16_t)_dust[i].x, (int16_t)_dust[i].y, 2, 2, Color565::White);
+      }
     }
 
     // Render Dino

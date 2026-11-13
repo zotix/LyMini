@@ -17,6 +17,7 @@ private:
   float _dropDelay;
   float _moveRepeatTimer;
   uint16_t _linesCleared;
+  float _clearFlashTimer;
 
   // Tetromino shapes definitions: 7 pieces, 4 rotations, 4x4 matrix
   // Stored as 16-bit bitmasks
@@ -37,6 +38,7 @@ public:
     }
     _score = 0;
     _linesCleared = 0;
+    _clearFlashTimer = 0.0f;
     _dropTimer = 0.0f;
     _dropDelay = 0.85f; // Slower & easier falling speed
     _moveRepeatTimer = 0.0f;
@@ -114,6 +116,7 @@ public:
 
     if (clearedInStep > 0) {
       _linesCleared += clearedInStep;
+      _clearFlashTimer = 0.35f;
       uint16_t linePoints[5] = { 0, 50, 120, 350, 1200 };
       _score += linePoints[clearedInStep];
       if (_dropDelay > 0.28f) _dropDelay -= (clearedInStep * 0.012f);
@@ -137,6 +140,8 @@ public:
       }
       return;
     }
+
+    if (_clearFlashTimer > 0.0f) _clearFlashTimer -= dt;
 
     // Move Left / Right (supports both tap and smooth hold auto-repeat)
     _moveRepeatTimer -= dt;
@@ -194,14 +199,16 @@ public:
     int16_t by = 16;
     gfx.drawRect(bx - 1, by - 1, (BOARD_W * 6) + 2, (BOARD_H * 6) + 2, Color565::DeepBlue);
 
-    // Render Board Grid Cells
+    // Render Board Grid Cells (3D Bevel)
     for (int y = 0; y < BOARD_H; ++y) {
       for (int x = 0; x < BOARD_W; ++x) {
         uint8_t val = _board[y][x];
         if (val > 0) {
           uint16_t col = PIECE_COLORS[val];
-          gfx.fillRect(bx + x * 6, by + y * 6, 5, 5, col);
-          gfx.drawPixel(bx + x * 6, by + y * 6, Color565::White); // Highlight
+          int16_t cx = bx + x * 6, cy = by + y * 6;
+          gfx.fillRect(cx, cy, 5, 5, col);
+          gfx.drawFastHLine(cx, cy, 5, Color565::White);
+          gfx.drawFastVLine(cx, cy, 5, Color565::White);
         } else {
           // Subtle dot in grid center
           gfx.drawPixel(bx + x * 6 + 2, by + y * 6 + 2, Color565::rgb(20, 25, 35));
@@ -253,6 +260,9 @@ public:
     char lbuf[8];
     snprintf(lbuf, sizeof(lbuf), "%u", _linesCleared);
     gfx.drawText(sx, 77, lbuf, Color565::White);
+    if (_clearFlashTimer > 0.0f) {
+      gfx.drawText(sx, 96, "CLEAR!", Color565::Lime);
+    }
 
     drawHud(gfx);
 

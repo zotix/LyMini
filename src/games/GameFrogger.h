@@ -6,18 +6,25 @@ class GameFrogger : public IGame {
 private:
   int16_t _frogX;
   int8_t _frogLane; // 0=start(bottom) .. 8=goal(top)
+  uint8_t _lives;
   struct LaneObj { float x; uint8_t w; float speed; bool isLog; };
-  LaneObj _lanes[7]; // lanes 1..7
+  LaneObj _lanes[7];
 
   void initLanes(float mult) {
-    // 1..3 = road cars, 4 = safe median, 5..7 = river logs
-    _lanes[0] = { 10, 20,  34.0f * mult, false };
-    _lanes[1] = { 80, 24, -42.0f * mult, false };
-    _lanes[2] = { 40, 18,  48.0f * mult, false };
-    _lanes[3] = {  0,  0,   0.0f,        false }; // safe strip
-    _lanes[4] = { 20, 38,  28.0f * mult, true  };
-    _lanes[5] = { 60, 34, -34.0f * mult, true  };
-    _lanes[6] = { 15, 42,  26.0f * mult, true  };
+    _lanes[0] = { 10, 20,  24.0f * mult, false };
+    _lanes[1] = { 76, 22, -28.0f * mult, false };
+    _lanes[2] = { 35, 18,  32.0f * mult, false };
+    _lanes[3] = {  0,  0,   0.0f,        false };
+    _lanes[4] = { 15, 48,  20.0f * mult, true  };
+    _lanes[5] = { 55, 46, -24.0f * mult, true  };
+    _lanes[6] = { 10, 52,  18.0f * mult, true  };
+  }
+
+  void loseLife() {
+    _lives--;
+    if (_lives == 0) { triggerGameOver(); return; }
+    _frogX = 64;
+    _frogLane = 0;
   }
 
 public:
@@ -29,6 +36,7 @@ public:
   void init() override {
     _frogX = 64;
     _frogLane = 0;
+    _lives = 3;
     _score = 0;
     _isGameOver = false;
     _newHighScore = false;
@@ -51,7 +59,7 @@ public:
         _score += 50;
         _frogLane = 0;
         _frogX = 64;
-        initLanes(1.0f + min(1.0f, _score * 0.002f));
+        initLanes(1.0f + min(0.8f, _score * 0.0015f));
         return;
       }
     }
@@ -66,38 +74,58 @@ public:
     if (_frogLane >= 1 && _frogLane <= 7 && _frogLane != 4) {
       LaneObj& L = _lanes[_frogLane - 1];
       bool onObj = (_frogX + 4 > L.x && _frogX - 4 < L.x + L.w) ||
-                   (_frogX + 4 > L.x + 70 && _frogX - 4 < L.x + 70 + L.w);
+                   (_frogX + 4 > L.x + 74 && _frogX - 4 < L.x + 74 + L.w);
       if (L.isLog) {
-        if (!onObj) { triggerGameOver(); return; }
+        if (!onObj) { loseLife(); return; }
         _frogX += (int16_t)(L.speed * dt);
-        if (_frogX < 2 || _frogX > 126) { triggerGameOver(); return; }
+        if (_frogX < 2 || _frogX > 126) { loseLife(); return; }
       } else {
-        if (onObj) { triggerGameOver(); return; }
+        if (onObj) { loseLife(); return; }
       }
     }
   }
 
   void render(DisplayCanvas& gfx) override {
-    gfx.fillRect(0, 13, SCREEN_WIDTH, 12, Color565::Emerald); // Goal
-    gfx.fillRect(0, 25, SCREEN_WIDTH, 36, Color565::DeepBlue); // River
-    gfx.fillRect(0, 61, SCREEN_WIDTH, 12, Color565::rgb(35, 65, 45)); // Safe median
-    gfx.fillRect(0, 73, SCREEN_WIDTH, 36, Color565::rgb(32, 32, 38)); // Road
-    gfx.fillRect(0, 109, SCREEN_WIDTH, 19, Color565::rgb(24, 52, 24)); // Start
+    gfx.fillRect(0, 13, SCREEN_WIDTH, 12, Color565::Emerald);
+    gfx.fillGradientV(0, 25, SCREEN_WIDTH, 36, Color565::rgb(10, 46, 110), Color565::rgb(16, 72, 150));
+    gfx.fillRect(0, 61, SCREEN_WIDTH, 12, Color565::rgb(35, 72, 48));
+    gfx.fillRect(0, 73, SCREEN_WIDTH, 36, Color565::rgb(30, 32, 38));
+    gfx.fillRect(0, 109, SCREEN_WIDTH, 19, Color565::rgb(24, 56, 26));
+
+    // Road dashed lines
+    for (int x = 4; x < SCREEN_WIDTH; x += 16) {
+      gfx.drawFastHLine(x, 85, 8, Color565::GrayMid);
+      gfx.drawFastHLine(x, 97, 8, Color565::GrayMid);
+    }
 
     for (int i = 0; i < 7; ++i) {
       if (_lanes[i].w == 0) continue;
       int16_t y = 109 - (i + 1) * 12 + 2;
-      uint16_t c = _lanes[i].isLog ? Color565::Orange : Color565::Red;
-      gfx.fillRoundRect((int16_t)_lanes[i].x, y, _lanes[i].w, 8, 2, c);
-      gfx.fillRoundRect((int16_t)_lanes[i].x + 70, y, _lanes[i].w, 8, 2, c);
+      for (int copy = 0; copy < 2; ++copy) {
+        int16_t ox = (int16_t)_lanes[i].x + copy * 74;
+        if (_lanes[i].isLog) {
+          gfx.fillRoundRect(ox, y, _lanes[i].w, 8, 2, Color565::rgb(148, 86, 38));
+          gfx.drawFastHLine(ox + 2, y + 2, _lanes[i].w - 4, Color565::Orange);
+        } else {
+          uint16_t cc = (i == 1) ? Color565::Yellow : Color565::Red;
+          gfx.fillRoundRect(ox, y, _lanes[i].w, 8, 2, cc);
+          gfx.fillRect(ox + 4, y + 1, _lanes[i].w - 8, 3, Color565::Cyan);
+        }
+      }
     }
 
+    // Detailed Frog
     int16_t fy = 109 - _frogLane * 12 + 6;
+    gfx.fillCircle(_frogX - 3, fy + 2, 2, Color565::Green);
+    gfx.fillCircle(_frogX + 3, fy + 2, 2, Color565::Green);
     gfx.fillCircle(_frogX, fy, 4, Color565::Lime);
-    gfx.drawPixel(_frogX - 2, fy - 2, Color565::Black);
-    gfx.drawPixel(_frogX + 2, fy - 2, Color565::Black);
+    gfx.fillCircle(_frogX - 2, fy - 3, 2, Color565::White);
+    gfx.fillCircle(_frogX + 2, fy - 3, 2, Color565::White);
+    gfx.drawPixel(_frogX - 2, fy - 3, Color565::Black);
+    gfx.drawPixel(_frogX + 2, fy - 3, Color565::Black);
 
-    gfx.drawCenteredText(118, "A:L  B:R  BOOT:HOP", Color565::Gold);
+    for (int i = 0; i < _lives; ++i) gfx.fillCircle(6 + i * 7, 123, 2, Color565::Red);
+    gfx.drawText(34, 118, "A:L B:R OK:HOP", Color565::Gold);
     drawHud(gfx);
     if (_isGameOver) drawGameOverOverlay(gfx);
   }

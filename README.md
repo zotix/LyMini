@@ -25,25 +25,25 @@ Built with a custom zero-flicker 16-bit RGB565 framebuffer engine (ST7735S Gamma
 
 ## ✨ Key Features
 
-- 🎮 **18 Built-in Retro Arcade Games (Show/Hide & Reorderable via Web Portal)**:
-  1. **Chrome Dino** — Endless desert runner with day/night speed scaling.
-  2. **Cyber Pong** — Classic neon paddle battle against adaptive AI.
-  3. **Space Runner** — Dodge and blast incoming asteroids in deep space.
-  4. **Car Dodge** — 3-lane high-speed highway racer.
-  5. **Retro Snake** — 2-button relative steering snake in a garden arena.
-  6. **Timberman** — Fast-paced tree chopping while dodging branches.
-  7. **Cyber Tetris** — Full block-stacking puzzle with line clears.
-  8. **Neon Breakout** — Brick-breaking arcade action.
-  9. **Cyber Bomber** — Grid-based Bomberman maze with destructible bricks & bombs.
-  10. **Flappy Bird** — Tap to flap through pipes.
-  11. **2048 Puzzle** — Merge tiles with 3-button axis toggle.
-  12. **Space Invader** — Defend Earth from waves of pixel aliens.
-  13. **Pac-Mini** — 13×13 maze dot-chomper with roaming ghosts.
-  14. **Simon Says** — 3-color memory sequence challenge.
-  15. **Whack-A-Mole** — Fast 3-hole mole & bomb reflex game.
-  16. **Tower Stack** — Precision block-stacking tower builder.
-  17. **Frogger** — Cross busy roads and river logs.
-  18. **Minesweeper** — 6×6 logic minefield with flag & dig controls.
+- 🎮 **18 Built-in Retro Arcade Games (Show/Hide & Reorderable via Web Portal, Polished Graphics & Balanced Gameplay)**:
+  1. **Chrome Dino** — Endless desert runner with gradient day/night sky, clouds, dust particles, and smooth speed scaling.
+  2. **Cyber Pong** — Classic neon paddle battle against adaptive AI with hit sparks and rally counter.
+  3. **Space Runner** — 3-life space shooter with spread-shot & bomb power-ups and explosion particles.
+  4. **Car Dodge** — 3-lane highway racer with Shield power-up, roadside trees, and coins.
+  5. **Retro Snake** — 2-button relative steering snake with wrap-around walls, gradient body, and Golden Apple bonus.
+  6. **Timberman** — Fast-paced tree chopping with combo multiplier, gradient sky, and wood chips.
+  7. **Cyber Tetris** — Full block-stacking puzzle with 3D-beveled pieces, ghost preview, and line-clear banner.
+  8. **Neon Breakout** — Multi-stage brick-breaking action with 5 lives, ball trail, and 3D rainbow/iron bricks.
+  9. **Cyber Bomber** — 3-life grid Bomberman maze with hidden bomb/range power-ups and corner assist.
+  10. **Flappy Bird** — Tap to flap through 3D pipes across a sunset sky with forgiving pipe gaps.
+  11. **2048 Puzzle** — 3D-bordered tile merger with clear 3-button axis indicator.
+  12. **Space Invader** — 3-life alien wave shooter with auto-fire, destructible shields, and twinkling stars.
+  13. **Pac-Mini** — Neon 13×13 maze dot-chomper with 4 corner Power Pellets (eat blue ghosts!).
+  14. **Simon Says** — Glowing 3D pad memory challenge with step counter.
+  15. **Whack-A-Mole** — 60s 3-hole mole & bomb reflex game with crowned golden moles and floating scores.
+  16. **Tower Stack** — Starry night 3D block-stacking builder with generous `PERFECT!` tolerance.
+  17. **Frogger** — 3-life road & river crossing with detailed frog, cars, and wide wood-grain logs.
+  18. **Minesweeper** — 6×6 logic minefield (4 mines) with 100% safe first dig and 3D beveled tiles.
 - 📺 **8-Mode Smart Idle TV Screensaver**:
   - **🕒 Cyber Digital Clock**, **🕰️ Analog Clock**, **🔢 Retro Flip Clock**, **🌡️ Multi-City Weather**, **🕒+🌡️ Clock + Weather Live Station Combo**, **🖼️ Photo Frame (`.rgb`)**, **🎬 Video / Animation Player (`.mvid`, toggleable in Eco Mode)**, and **☕ Buy Me a Coffee (PromptPay QR)**.
   - **Smart Filtering & Instant Web Preview (`👁️`)**: Preview any Idle screen or city directly on the physical ESP32 display with a single click.

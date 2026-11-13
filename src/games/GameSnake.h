@@ -11,8 +11,12 @@ private:
   uint8_t _length;
   int8_t _dir; // 0: Up, 1: Right, 2: Down, 3: Left
   Point _food;
+  Point _bonusFood;
+  bool _bonusActive;
+  float _bonusTimer;
   float _stepTimer;
   float _stepDelay;
+  float _tongueTimer;
 
 public:
   const char* id() const override { return "snake"; }
@@ -25,6 +29,9 @@ public:
     _dir = 1; // Moving Right
     _stepTimer = 0.0f;
     _stepDelay = 0.22f; // Slower, easier step speed
+    _bonusActive = false;
+    _bonusTimer = 0.0f;
+    _tongueTimer = 0.0f;
     _score = 0;
     _isGameOver = false;
     _newHighScore = false;
@@ -70,6 +77,12 @@ public:
       _dir = (_dir + 1) % 4;
     }
 
+    _tongueTimer += dt;
+    if (_bonusActive) {
+      _bonusTimer -= dt;
+      if (_bonusTimer <= 0.0f) _bonusActive = false;
+    }
+
     // Normal relaxed pace (BOOT hold sprint disabled so holding BOOT to exit is safe)
     float currentDelay = _stepDelay;
 
@@ -110,6 +123,16 @@ public:
         if (_length < 63) _length++;
         if (_stepDelay > 0.12f) _stepDelay -= 0.002f;
         spawnFood();
+        if (!_bonusActive && random(0, 4) == 0) {
+          _bonusFood.x = random(1, 16);
+          _bonusFood.y = random(1, 14);
+          _bonusActive = true;
+          _bonusTimer = 7.0f;
+        }
+      }
+      if (_bonusActive && nextHead.x == _bonusFood.x && nextHead.y == _bonusFood.y) {
+        _score += 50;
+        _bonusActive = false;
       }
     }
   }
@@ -126,19 +149,32 @@ public:
     // Outer Boundary Wall
     gfx.drawRect(4, 16, 17 * 7, 15 * 7, Color565::Gold);
 
-    // Food (Crisp Red Apple with green leaf)
+    // Food (Crisp Red Apple with green leaf & highlight)
     int16_t fx = _food.x * 7 + 4;
     int16_t fy = _food.y * 7 + 16;
     gfx.fillCircle(fx + 3, fy + 4, 3, Color565::Red);
+    gfx.drawPixel(fx + 2, fy + 3, Color565::White);
     gfx.drawPixel(fx + 3, fy + 1, Color565::Lime); // Leaf
+
+    // Golden Apple Bonus
+    if (_bonusActive && ((int)(_bonusTimer * 6) % 2 == 0 || _bonusTimer > 2.0f)) {
+      int16_t gx = _bonusFood.x * 7 + 4;
+      int16_t gy = _bonusFood.y * 7 + 16;
+      gfx.fillCircle(gx + 3, gy + 4, 3, Color565::Gold);
+      gfx.drawPixel(gx + 2, gy + 3, Color565::White);
+    }
 
     // Snake Body
     for (int i = _length - 1; i >= 0; --i) {
       int16_t bx = _body[i].x * 7 + 4;
       int16_t by = _body[i].y * 7 + 16;
       if (i == 0) {
-        // Head (Bright Emerald Green with eyes)
+        // Head (Bright Emerald Green with eyes + flicking tongue)
         gfx.fillRoundRect(bx + 1, by + 1, 6, 6, 2, Color565::Lime);
+        if (((int)(_tongueTimer * 4) % 4) == 0) {
+          int8_t dx[4] = {0, 1, 0, -1}, dy[4] = {-1, 0, 1, 0};
+          gfx.drawPixel(bx + 3 + dx[_dir] * 4, by + 3 + dy[_dir] * 4, Color565::Red);
+        }
         // Eyes
         if (_dir == 0 || _dir == 2) {
           gfx.drawPixel(bx + 2, by + 3, Color565::Black);
@@ -148,8 +184,9 @@ public:
           gfx.drawPixel(bx + 3, by + 5, Color565::Black);
         }
       } else {
-        // Body segments (Gradient Mint to Emerald)
-        uint16_t segColor = (i % 2 == 0) ? Color565::Emerald : Color565::Mint;
+        // Body segments (Smooth Gradient)
+        uint8_t g = max(90, 220 - i * 3);
+        uint16_t segColor = Color565::rgb(15, g, 90);
         gfx.fillRect(bx + 1, by + 1, 5, 5, segColor);
       }
     }

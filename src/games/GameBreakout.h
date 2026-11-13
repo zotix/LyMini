@@ -14,6 +14,9 @@ private:
   float _ballVX, _ballVY;
   bool _ballStuck;
   uint8_t _lives;
+  uint8_t _stage;
+  float _trailX[4];
+  float _trailY[4];
 
   struct Capsule {
     float x, y;
@@ -30,33 +33,38 @@ public:
   const char* desc() const override { return "Smash all rainbow bricks!"; }
   uint16_t themeColor() const override { return Color565::Gold; }
 
+  void setupStageBricks() {
+    for (int i = 0; i < 2; ++i) _capsules[i].active = false;
+    for (int r = 0; r < BRICK_ROWS; ++r) {
+      for (int c = 0; c < BRICK_COLS; ++c) {
+        _bricks[r][c] = (_stage >= 2 && r == 0) ? 2 : 1;
+      }
+    }
+    resetBall();
+  }
+
   void init() override {
     _paddleW = 34.0f; // Wider paddle
     _paddleX = (SCREEN_WIDTH - _paddleW) / 2.0f;
     _lives = 5;       // 5 Lives for easier gameplay
+    _stage = 1;
     _score = 0;
     _isGameOver = false;
     _newHighScore = false;
     _highScore = HighScoreStore::getHighScore(id());
-
-    for (int i = 0; i < 2; ++i) _capsules[i].active = false;
-
-    // Reset Bricks (all 1-hit bricks for satisfying smashing)
-    for (int r = 0; r < BRICK_ROWS; ++r) {
-      for (int c = 0; c < BRICK_COLS; ++c) {
-        _bricks[r][c] = 1;
-      }
-    }
-
-    resetBall();
+    setupStageBricks();
   }
 
   void resetBall() {
     _ballStuck = true;
     _ballX = _paddleX + (_paddleW / 2.0f);
     _ballY = 117.0f;
-    _ballVX = 42.0f;
-    _ballVY = -60.0f;
+    _ballVX = 42.0f + (_stage - 1) * 6.0f;
+    _ballVY = -(60.0f + (_stage - 1) * 6.0f);
+    for (int i = 0; i < 4; ++i) {
+      _trailX[i] = _ballX;
+      _trailY[i] = _ballY;
+    }
   }
 
   void update(const InputState& input, float dt) override {
@@ -83,6 +91,14 @@ public:
       }
       return;
     }
+
+    // Shift ball trail
+    for (int i = 3; i > 0; --i) {
+      _trailX[i] = _trailX[i - 1];
+      _trailY[i] = _trailY[i - 1];
+    }
+    _trailX[0] = _ballX;
+    _trailY[0] = _ballY;
 
     // Move Ball
     _ballX += _ballVX * dt;
@@ -149,7 +165,8 @@ collision_done:
 
     if (!anyBricksLeft) {
       _score += 200;
-      init(); // Clear stage and replay!
+      _stage++;
+      setupStageBricks(); // Advance stage while keeping score & lives!
       return;
     }
 
@@ -195,7 +212,7 @@ collision_done:
     gfx.drawFastVLine(0, 12, SCREEN_HEIGHT - 12, Color565::Navy);
     gfx.drawFastVLine(SCREEN_WIDTH - 1, 12, SCREEN_HEIGHT - 12, Color565::Navy);
 
-    // Bricks
+    // Bricks (3D highlight)
     for (int r = 0; r < BRICK_ROWS; ++r) {
       for (int c = 0; c < BRICK_COLS; ++c) {
         if (_bricks[r][c] > 0) {
@@ -203,7 +220,8 @@ collision_done:
           int16_t by = 20 + r * 8;
           uint16_t col = (_bricks[r][c] == 2) ? Color565::GrayLight : ROW_COLORS[r];
           gfx.fillRect(bx, by, 14, 6, col);
-          gfx.drawPixel(bx, by, Color565::White); // Shading highlight
+          gfx.drawFastHLine(bx, by, 14, Color565::White);
+          gfx.drawFastVLine(bx, by, 6, Color565::White);
         }
       }
     }
@@ -216,7 +234,10 @@ collision_done:
       }
     }
 
-    // Ball
+    // Ball Trail & Ball
+    for (int i = 3; i > 0; --i) {
+      gfx.fillRect((int16_t)_trailX[i], (int16_t)_trailY[i], 2, 2, Color565::rgb(40 * (4 - i), 40 * (4 - i), 55 * (4 - i)));
+    }
     gfx.fillRect((int16_t)_ballX, (int16_t)_ballY, 3, 3, Color565::White);
 
     // Paddle

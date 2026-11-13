@@ -12,12 +12,17 @@ private:
 
   // Tile types: 0 = Empty, 1 = Steel Wall, 2 = Brick Wall, 3 = Flame
   uint8_t _grid[ROWS][COLS];
+  uint8_t _powerTile[ROWS][COLS]; // 0 = None, 1 = +Bomb, 2 = +Range
   float   _flameTimer[ROWS][COLS];
 
   int8_t  _px, _py;
   int8_t  _pDir; // 0: Up, 1: Right, 2: Down, 3: Left
   float   _moveTimer;
   uint8_t _stage;
+  uint8_t _lives;
+  float   _invulnTimer;
+  uint8_t _maxBombs;
+  uint8_t _blastRange;
 
   struct Bomb {
     bool   active;
@@ -39,12 +44,16 @@ private:
     for (int r = 0; r < ROWS; ++r) {
       for (int c = 0; c < COLS; ++c) {
         _flameTimer[r][c] = 0.0f;
+        _powerTile[r][c] = 0;
         if (r == 0 || r == ROWS - 1 || c == 0 || c == COLS - 1 || (r % 2 == 0 && c % 2 == 0)) {
           _grid[r][c] = 1; // Indestructible Steel
         } else if ((r <= 2 && c <= 2)) {
           _grid[r][c] = 0; // Keep player spawn corner clear
         } else {
           _grid[r][c] = (random(0, 100) < 42) ? 2 : 0; // Destructible Brick
+          if (_grid[r][c] == 2 && random(0, 5) == 0) {
+            _powerTile[r][c] = random(1, 3); // Hidden powerup
+          }
         }
       }
     }
@@ -87,13 +96,13 @@ private:
     for (int i = 0; i < 2; ++i) {
       if (_bombs[i].active && _bombs[i].x == _px && _bombs[i].y == _py) return;
     }
-    for (int i = 0; i < 2; ++i) {
+    for (int i = 0; i < _maxBombs; ++i) {
       if (!_bombs[i].active) {
         _bombs[i].active = true;
         _bombs[i].x = _px;
         _bombs[i].y = _py;
         _bombs[i].timer = 1.8f;
-        _bombs[i].range = 3; // Longer 3-tile blast range!
+        _bombs[i].range = _blastRange;
         return;
       }
     }
@@ -155,6 +164,10 @@ public:
   void init() override {
     _score = 0;
     _stage = 1;
+    _lives = 3;
+    _invulnTimer = 0.0f;
+    _maxBombs = 1;
+    _blastRange = 3;
     _isGameOver = false;
     _newHighScore = false;
     _highScore = HighScoreStore::getHighScore(id());
@@ -168,6 +181,8 @@ public:
       }
       return;
     }
+
+    if (_invulnTimer > 0.0f) _invulnTimer -= dt;
 
     const int8_t dx[4] = { 0, 1, 0, -1 };
     const int8_t dy[4] = { -1, 0, 1, 0 };
@@ -187,6 +202,12 @@ public:
         _px = nx;
         _py = ny;
         _moveTimer = 0.18f;
+        if (_powerTile[_py][_px] > 0) {
+          if (_powerTile[_py][_px] == 1 && _maxBombs < 2) _maxBombs++;
+          else if (_powerTile[_py][_px] == 2 && _blastRange < 5) _blastRange++;
+          _powerTile[_py][_px] = 0;
+          _score += 25;
+        }
       } else if (input.leftPressed) {
         // Smart corner assist: if blocked straight ahead, auto-turn to an open adjacent tile!
         for (int turn = 1; turn <= 3; ++turn) {
@@ -263,9 +284,13 @@ public:
         }
       }
 
-      if (_enemies[i].x == _px && _enemies[i].y == _py) {
-        triggerGameOver();
-        return;
+      if (_invulnTimer <= 0.0f && _enemies[i].x == _px && _enemies[i].y == _py) {
+        _lives--;
+        if (_lives == 0) {
+          triggerGameOver();
+          return;
+        }
+        _invulnTimer = 1.6f;
       }
     }
 
@@ -302,8 +327,12 @@ public:
           gfx.fillRect(sx, sy, CELL - 1, CELL - 1, Color565::Orange);
           gfx.fillRect(sx + 2, sy + 2, CELL - 5, CELL - 5, Color565::Yellow);
         } else {
-          // Floor Tile
+          // Floor Tile + Power-up icon
           gfx.fillRect(sx, sy, CELL - 1, CELL - 1, Color565::rgb(20, 32, 24));
+          if (_powerTile[r][c] > 0) {
+            uint16_t pcol = (_powerTile[r][c] == 1) ? Color565::Cyan : Color565::Gold;
+            gfx.fillRoundRect(sx + 1, sy + 1, CELL - 3, CELL - 3, 2, pcol);
+          }
         }
       }
     }
@@ -331,20 +360,26 @@ public:
       }
     }
 
-    // Draw Player (Cyber Bomberman + Facing Direction Arrow)
-    int16_t px = OFF_X + _px * CELL + 5;
-    int16_t py = OFF_Y + _py * CELL + 5;
-    gfx.fillCircle(px, py, 4, Color565::NeonCyan);
-    gfx.drawCircle(px, py, 4, Color565::White);
+    // Draw Player (Cyber Bomberman + Facing Direction Arrow, blinks when invuln)
+    if (_invulnTimer <= 0.0f || ((int)(_invulnTimer * 12) % 2 == 0)) {
+      int16_t px = OFF_X + _px * CELL + 5;
+      int16_t py = OFF_Y + _py * CELL + 5;
+      gfx.fillCircle(px, py, 4, Color565::NeonCyan);
+      gfx.drawCircle(px, py, 4, Color565::White);
 
-    // Direction indicator dot outside player helmet so player knows which way A steps
-    const int8_t dx[4] = { 0, 1, 0, -1 };
-    const int8_t dy[4] = { -1, 0, 1, 0 };
-    int16_t ax = px + dx[_pDir] * 5;
-    int16_t ay = py + dy[_pDir] * 5;
-    gfx.fillCircle(ax, ay, 1, Color565::Yellow);
+      const int8_t dx[4] = { 0, 1, 0, -1 };
+      const int8_t dy[4] = { -1, 0, 1, 0 };
+      int16_t ax = px + dx[_pDir] * 5;
+      int16_t ay = py + dy[_pDir] * 5;
+      gfx.fillCircle(ax, ay, 1, Color565::Yellow);
+    }
 
     drawHud(gfx);
+
+    // Lives on HUD
+    for (int i = 0; i < _lives; ++i) {
+      gfx.fillCircle(50 + i * 7, 6, 2, Color565::Red);
+    }
 
     if (_isGameOver) {
       drawGameOverOverlay(gfx);

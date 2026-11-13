@@ -11,6 +11,8 @@ private:
   float _maxTime;
   uint8_t _chopAnim; // 0: Idle, 1: Swing
   float _chopAnimTimer;
+  uint16_t _combo;
+  float _comboTimer;
 
   struct WoodChip {
     float x, y;
@@ -32,6 +34,8 @@ public:
     _score = 0;
     _chopAnim = 0;
     _chopAnimTimer = 0.0f;
+    _combo = 0;
+    _comboTimer = 0.0f;
     _isGameOver = false;
     _newHighScore = false;
     _highScore = HighScoreStore::getHighScore(id());
@@ -87,7 +91,9 @@ public:
       return;
     }
 
-    _score++;
+    _combo++;
+    _comboTimer = 0.85f;
+    _score += (_combo >= 5) ? 2 : 1;
     // Add generous time back
     float timeGain = max(0.32f, 0.65f - (_score * 0.002f));
     _timeRemaining = min(_maxTime, _timeRemaining + timeGain);
@@ -101,10 +107,14 @@ public:
       return;
     }
 
-    // Chop anim timer
+    // Chop anim & combo timer
     if (_chopAnim > 0) {
       _chopAnimTimer -= dt;
       if (_chopAnimTimer <= 0.0f) _chopAnim = 0;
+    }
+    if (_comboTimer > 0.0f) {
+      _comboTimer -= dt;
+      if (_comboTimer <= 0.0f) _combo = 0;
     }
 
     // Wood chips physics
@@ -135,8 +145,15 @@ public:
   }
 
   void render(DisplayCanvas& gfx) override {
-    // Sunny Forest Sky
-    gfx.fillRect(0, 12, SCREEN_WIDTH, SCREEN_HEIGHT - 12, Color565::SkyBlue);
+    // Gradient Sunny Forest Sky
+    for (int16_t y = 12; y < 108; y += 4) {
+      uint8_t t = (y - 12) * 255 / 96;
+      gfx.fillRect(0, y, SCREEN_WIDTH, 4, Color565::rgb(40 + t / 3, 140 + t / 4, 235));
+    }
+    gfx.fillCircle(108, 28, 7, Color565::Yellow);
+    gfx.fillRoundRect(16, 26, 22, 7, 3, Color565::White);
+    gfx.fillCircle(24, 25, 4, Color565::White);
+    gfx.fillRoundRect(82, 42, 18, 6, 3, Color565::White);
 
     // Mountains in background
     gfx.fillTriangle(0, 100, 35, 60, 70, 100, Color565::rgb(60, 100, 140));
@@ -144,12 +161,16 @@ public:
 
     // Green Grass Ground
     gfx.fillRect(0, 108, SCREEN_WIDTH, 20, Color565::Green);
-    gfx.drawFastHLine(0, 108, SCREEN_WIDTH, Color565::Emerald);
+    gfx.drawFastHLine(0, 108, SCREEN_WIDTH, Color565::Lime);
 
     // Tree Trunk (Center: X = 52, W = 24)
     gfx.fillRect(52, 12, 24, 96, Color565::rgb(140, 80, 40));
     gfx.fillRect(54, 12, 4, 96, Color565::rgb(170, 100, 50)); // Bark highlight
     gfx.fillRect(70, 12, 4, 96, Color565::rgb(110, 60, 30));  // Bark shadow
+    for (int y = 20; y < 105; y += 16) {
+      gfx.drawFastVLine(61, y, 6, Color565::rgb(100, 55, 25));
+      gfx.drawFastVLine(66, y + 6, 5, Color565::rgb(100, 55, 25));
+    }
 
     // Tree Branches
     for (int i = 0; i < 6; ++i) {
@@ -196,6 +217,12 @@ public:
     uint16_t barCol = (pct > 0.5f) ? Color565::Lime : ((pct > 0.25f) ? Color565::Gold : Color565::Red);
     gfx.drawRect(13, 16, 102, 6, Color565::White);
     gfx.fillRect(14, 17, barW, 4, barCol);
+
+    if (_combo >= 5) {
+      char cbuf[12];
+      snprintf(cbuf, sizeof(cbuf), "x%u", _combo);
+      gfx.drawText(86, 26, cbuf, Color565::Gold, 1);
+    }
 
     drawHud(gfx);
 

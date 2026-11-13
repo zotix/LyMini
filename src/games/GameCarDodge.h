@@ -9,6 +9,16 @@ private:
   float _roadOffset;
   float _speed;
   bool _nitro;
+  bool _hasShield;
+  float _invulnTimer;
+  uint8_t _coinCombo;
+
+  struct ShieldItem {
+    uint8_t lane;
+    float y;
+    bool active;
+  };
+  ShieldItem _shieldItem;
 
   struct TrafficCar {
     uint8_t lane;
@@ -44,6 +54,10 @@ public:
     _roadOffset = 0.0f;
     _speed = 90.0f;
     _nitro = false;
+    _hasShield = false;
+    _invulnTimer = 0.0f;
+    _coinCombo = 0;
+    _shieldItem.active = false;
     _score = 0;
     _isGameOver = false;
     _newHighScore = false;
@@ -79,6 +93,8 @@ public:
       }
       return;
     }
+
+    if (_invulnTimer > 0.0f) _invulnTimer -= dt;
 
     // Lane Switching
     if (input.leftPressed && _playerLane > 0) {
@@ -124,11 +140,35 @@ public:
 
         // Forgiving Collision Check with Player
         float tx = getLaneX(_traffic[i].lane);
-        if (_playerX + 2.0f < tx + 12.0f && _playerX + 12.0f > tx + 2.0f &&
+        if (_invulnTimer <= 0.0f &&
+            _playerX + 2.0f < tx + 12.0f && _playerX + 12.0f > tx + 2.0f &&
             106.0f < _traffic[i].y + 16.0f && 120.0f > _traffic[i].y + 2.0f) {
-          triggerGameOver();
-          return;
+          if (_hasShield) {
+            _hasShield = false;
+            _traffic[i].active = false;
+            _invulnTimer = 1.4f;
+          } else {
+            triggerGameOver();
+            return;
+          }
         }
+      }
+    }
+
+    // Shield Powerup
+    if (!_shieldItem.active && !_hasShield && random(0, 400) == 0) {
+      _shieldItem.lane = random(0, 3);
+      _shieldItem.y = -20.0f;
+      _shieldItem.active = true;
+    } else if (_shieldItem.active) {
+      _shieldItem.y += currentSpeed * dt;
+      if (_shieldItem.y > SCREEN_HEIGHT + 10) _shieldItem.active = false;
+      float sx = getLaneX(_shieldItem.lane);
+      if (_playerX < sx + 12.0f && _playerX + 14.0f > sx &&
+          104.0f < _shieldItem.y + 10.0f && 122.0f > _shieldItem.y) {
+        _shieldItem.active = false;
+        _hasShield = true;
+        _score += 25;
       }
     }
 
@@ -154,9 +194,14 @@ public:
   }
 
   void render(DisplayCanvas& gfx) override {
-    // Grass/Sidewalk Borders
+    // Grass/Sidewalk Borders + Scrolling Roadside Trees
     gfx.fillRect(0, 12, 18, SCREEN_HEIGHT - 12, Color565::rgb(20, 80, 20));
     gfx.fillRect(SCREEN_WIDTH - 18, 12, 18, SCREEN_HEIGHT - 12, Color565::rgb(20, 80, 20));
+    int16_t treeOff = (int16_t)_roadOffset % 16;
+    for (int16_t y = 16 - treeOff; y < SCREEN_HEIGHT; y += 32) {
+      gfx.fillCircle(9, y, 5, Color565::rgb(30, 130, 40));
+      gfx.fillCircle(SCREEN_WIDTH - 9, y + 14, 5, Color565::rgb(30, 130, 40));
+    }
 
     // Road (Asphalt Dark Gray)
     gfx.fillRect(18, 12, SCREEN_WIDTH - 36, SCREEN_HEIGHT - 12, Color565::rgb(40, 40, 45));
@@ -200,20 +245,29 @@ public:
       }
     }
 
-    // Player Car (Bright Red Sports Car)
+    // Shield Item
+    if (_shieldItem.active) {
+      float sx = getLaneX(_shieldItem.lane) + 7.0f;
+      gfx.fillCircle((int16_t)sx, (int16_t)_shieldItem.y, 4, Color565::Cyan);
+      gfx.drawCircle((int16_t)sx, (int16_t)_shieldItem.y, 5, Color565::White);
+    }
+
+    // Player Car (Bright Red Sports Car, blinks on shield break)
     int16_t px = (int16_t)_playerX;
     int16_t py = 104;
-    gfx.fillRoundRect(px, py, 14, 18, 3, Color565::Red);
-    // Windshield (Black/Cyan)
-    gfx.fillRect(px + 2, py + 5, 10, 5, Color565::DeepBlue);
-    // Headlights
-    gfx.fillRect(px + 2, py, 2, 2, Color565::Yellow);
-    gfx.fillRect(px + 10, py, 2, 2, Color565::Yellow);
-    // Wheels
-    gfx.fillRect(px - 1, py + 2, 1, 4, Color565::Black);
-    gfx.fillRect(px + 14, py + 2, 1, 4, Color565::Black);
-    gfx.fillRect(px - 1, py + 12, 1, 4, Color565::Black);
-    gfx.fillRect(px + 14, py + 12, 1, 4, Color565::Black);
+    if (_invulnTimer <= 0.0f || ((int)(_invulnTimer * 12) % 2 == 0)) {
+      if (_hasShield) {
+        gfx.drawRoundRect(px - 2, py - 2, 18, 22, 5, Color565::Cyan);
+      }
+      gfx.fillRoundRect(px, py, 14, 18, 3, Color565::Red);
+      gfx.fillRect(px + 2, py + 5, 10, 5, Color565::DeepBlue);
+      gfx.fillRect(px + 2, py, 2, 2, Color565::Yellow);
+      gfx.fillRect(px + 10, py, 2, 2, Color565::Yellow);
+      gfx.fillRect(px - 1, py + 2, 1, 4, Color565::Black);
+      gfx.fillRect(px + 14, py + 2, 1, 4, Color565::Black);
+      gfx.fillRect(px - 1, py + 12, 1, 4, Color565::Black);
+      gfx.fillRect(px + 14, py + 12, 1, 4, Color565::Black);
+    }
 
     // Nitro Flames
     if (_nitro) {

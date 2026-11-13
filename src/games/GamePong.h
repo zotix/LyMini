@@ -14,6 +14,27 @@ private:
   float _trailY[4];
   uint8_t _rallyCount;
 
+  struct Spark {
+    float x, y, vx, vy, life;
+    uint16_t color;
+  };
+  Spark _sparks[8];
+
+  void spawnSparks(float x, float y, uint16_t col) {
+    int spawned = 0;
+    for (int i = 0; i < 8 && spawned < 4; ++i) {
+      if (_sparks[i].life <= 0.0f) {
+        _sparks[i].x = x;
+        _sparks[i].y = y;
+        _sparks[i].vx = random(-50, 51);
+        _sparks[i].vy = random(-50, 51);
+        _sparks[i].life = 0.25f;
+        _sparks[i].color = col;
+        spawned++;
+      }
+    }
+  }
+
 public:
   const char* id() const override { return "pong"; }
   const char* title() const override { return "Cyber Pong"; }
@@ -31,6 +52,7 @@ public:
 
     _playerX = 64.0f - 16.0f;
     _aiX = 64.0f - 11.0f;
+    for (int i = 0; i < 8; ++i) _sparks[i].life = 0.0f;
     resetBall(1);
   }
 
@@ -60,14 +82,23 @@ public:
     if (_playerX < 2.0f) _playerX = 2.0f;
     if (_playerX > SCREEN_WIDTH - 34.0f) _playerX = SCREEN_WIDTH - 34.0f;
 
-    // AI Paddle Tracking (Slower so player can easily score)
+    // AI Paddle Tracking (scales fairly with total points scored)
     float aiCenter = _aiX + 11.0f;
     float targetX = _ballX;
-    float aiSpeed = 44.0f + (_aiScore * 3.0f);
+    float aiSpeed = 46.0f + ((_playerScore + _aiScore) * 3.5f);
     if (targetX < aiCenter - 3.0f) _aiX -= aiSpeed * dt;
     else if (targetX > aiCenter + 3.0f) _aiX += aiSpeed * dt;
     if (_aiX < 2.0f) _aiX = 2.0f;
     if (_aiX > SCREEN_WIDTH - 24.0f) _aiX = SCREEN_WIDTH - 24.0f;
+
+    // Update sparks
+    for (int i = 0; i < 8; ++i) {
+      if (_sparks[i].life > 0.0f) {
+        _sparks[i].life -= dt;
+        _sparks[i].x += _sparks[i].vx * dt;
+        _sparks[i].y += _sparks[i].vy * dt;
+      }
+    }
 
     // Shift ball trails
     for (int i = 3; i > 0; --i) {
@@ -85,9 +116,11 @@ public:
     if (_ballX <= 3.0f) {
       _ballX = 3.0f;
       _ballVX = -_ballVX;
+      spawnSparks(_ballX, _ballY, Color565::NeonCyan);
     } else if (_ballX >= SCREEN_WIDTH - 6.0f) {
       _ballX = SCREEN_WIDTH - 6.0f;
       _ballVX = -_ballVX;
+      spawnSparks(_ballX, _ballY, Color565::NeonCyan);
     }
 
     // Collision with Player Paddle (Bottom: Y = 118, Width = 32)
@@ -100,6 +133,7 @@ public:
 
         _rallyCount++;
         _score += 15 + (_rallyCount * 2);
+        spawnSparks(_ballX + 2, 118, Color565::Cyan);
       }
     }
 
@@ -110,12 +144,14 @@ public:
         _ballVY = -(_ballVY * 1.03f);
         if (fabs(_ballVY) > 130.0f) _ballVY = 130.0f;
         _ballVX = hitOffset * 5.0f;
+        spawnSparks(_ballX + 2, 24, Color565::Magenta);
       }
     }
 
     // Missed - AI scores
     if (_ballY > SCREEN_HEIGHT) {
       _aiScore++;
+      _rallyCount = 0;
       if (_aiScore >= 5) {
         triggerGameOver();
       } else {
@@ -126,6 +162,7 @@ public:
     // Scored on AI
     if (_ballY < 14.0f) {
       _playerScore++;
+      _rallyCount = 0;
       _score += 50;
       if (_playerScore >= 5) {
         _score += 200;
@@ -140,7 +177,8 @@ public:
     // Dark Space Court
     gfx.fillRect(0, 12, SCREEN_WIDTH, SCREEN_HEIGHT - 12, Color565::rgb(10, 15, 30));
 
-    // Court Net Dashed Line
+    // Court Net Dashed Line & Center Circle
+    gfx.drawCircle(64, 68, 14, Color565::Navy);
     for (int x = 4; x < SCREEN_WIDTH; x += 8) {
       gfx.drawFastHLine(x, 68, 4, Color565::Navy);
     }
@@ -150,11 +188,22 @@ public:
     gfx.drawFastVLine(SCREEN_WIDTH - 1, 12, SCREEN_HEIGHT - 12, Color565::NeonCyan);
 
     // AI Score & Player Score in background
-    char sbuf[8];
+    char sbuf[16];
     snprintf(sbuf, sizeof(sbuf), "%d", _aiScore);
     gfx.drawText(6, 30, sbuf, Color565::GrayDark, 2);
     snprintf(sbuf, sizeof(sbuf), "%d", _playerScore);
     gfx.drawText(6, 85, sbuf, Color565::GrayDark, 2);
+    if (_rallyCount >= 3) {
+      snprintf(sbuf, sizeof(sbuf), "RALLY x%d", _rallyCount);
+      gfx.drawText(66, 56, sbuf, Color565::Gold, 1);
+    }
+
+    // Sparks
+    for (int i = 0; i < 8; ++i) {
+      if (_sparks[i].life > 0.0f) {
+        gfx.fillRect((int16_t)_sparks[i].x, (int16_t)_sparks[i].y, 2, 2, _sparks[i].color);
+      }
+    }
 
     // Ball Trails (Glow effect)
     for (int i = 3; i > 0; --i) {

@@ -5,7 +5,7 @@
 class Game2048 : public IGame {
 private:
   uint16_t _grid[4][4];
-  bool _verticalAxis; // false = Left/Right (A/B), true = Up/Down (A/B)
+  bool _verticalAxis;
 
   void spawnTile() {
     uint8_t empty[16][2];
@@ -53,8 +53,6 @@ private:
   }
 
   void moveDir(uint8_t dir) {
-    // 0:Left, 1:Right, 2:Up, 3:Down
-    uint32_t oldScore = _score;
     bool any = false;
     for (int i = 0; i < 4; ++i) {
       uint16_t line[4];
@@ -75,20 +73,18 @@ private:
     if (any) {
       spawnTile();
       if (!canMove()) triggerGameOver();
-    } else {
-      _score = oldScore;
     }
   }
 
   uint16_t tileColor(uint16_t v) const {
     switch (v) {
-      case 0:    return Color565::rgb(24, 30, 44);
-      case 2:    return Color565::rgb(60, 80, 110);
-      case 4:    return Color565::rgb(40, 110, 130);
-      case 8:    return Color565::Orange;
-      case 16:   return Color565::Crimson;
-      case 32:   return Color565::Magenta;
-      case 64:   return Color565::Red;
+      case 0:    return Color565::rgb(24, 32, 48);
+      case 2:    return Color565::rgb(64, 96, 140);
+      case 4:    return Color565::rgb(42, 128, 152);
+      case 8:    return Color565::rgb(230, 130, 40);
+      case 16:   return Color565::rgb(220, 80, 50);
+      case 32:   return Color565::Crimson;
+      case 64:   return Color565::Magenta;
       case 128:  return Color565::Gold;
       case 256:  return Color565::Yellow;
       case 512:  return Color565::Lime;
@@ -128,23 +124,30 @@ public:
   }
 
   void render(DisplayCanvas& gfx) override {
-    gfx.fillRect(0, 13, SCREEN_WIDTH, SCREEN_HEIGHT - 13, Color565::rgb(12, 16, 26));
-    int16_t startX = 14, startY = 16, cell = 23, gap = 2;
+    gfx.fillGradientV(0, 13, SCREEN_WIDTH, SCREEN_HEIGHT - 13, Color565::rgb(12, 16, 28), Color565::rgb(20, 26, 44));
+    gfx.drawRoundRect(11, 14, 106, 102, 4, _verticalAxis ? Color565::NeonCyan : Color565::Gold);
+
+    int16_t startX = 14, startY = 17, cell = 23, gap = 2;
     for (int r = 0; r < 4; ++r) {
       for (int c = 0; c < 4; ++c) {
         int16_t x = startX + c * (cell + gap);
         int16_t y = startY + r * (cell + gap);
         uint16_t v = _grid[r][c];
-        gfx.fillRoundRect(x, y, cell, cell, 3, tileColor(v));
+        uint16_t tc = tileColor(v);
+        gfx.fillRoundRect(x, y, cell, cell, 3, tc);
         if (v > 0) {
+          gfx.drawRoundRect(x, y, cell, cell, 3, Color565::White);
           char b[8];
           snprintf(b, sizeof(b), "%u", v);
           int16_t tx = x + (cell - (int16_t)strlen(b) * 6) / 2;
-          gfx.drawText(tx, y + 8, b, Color565::White);
+          gfx.drawText(tx, y + 8, b, (v == 128 || v == 256 || v == 512) ? Color565::Black : Color565::White);
         }
       }
     }
-    gfx.drawCenteredText(118, _verticalAxis ? "A:UP  B:DN  OK:H/V" : "A:L   B:R   OK:H/V", Color565::Gold);
+
+    gfx.fillRect(0, 117, SCREEN_WIDTH, 11, Color565::rgb(16, 22, 36));
+    gfx.drawCenteredText(119, _verticalAxis ? "AXIS: ^/v  (OK:H/V)" : "AXIS: </>  (OK:H/V)",
+                         _verticalAxis ? Color565::NeonCyan : Color565::Gold);
     drawHud(gfx);
     if (_isGameOver) drawGameOverOverlay(gfx);
   }

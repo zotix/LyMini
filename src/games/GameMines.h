@@ -4,21 +4,13 @@
 
 class GameMines : public IGame {
 private:
-  uint8_t _mine[6][6];   // 1 = mine
+  uint8_t _mine[6][6];
   uint8_t _state[6][6];  // 0 = hidden, 1 = revealed, 2 = flagged
   uint8_t _adj[6][6];
-  int8_t _cur;           // 0..35
-  bool _won;
+  int8_t _cur;
+  bool _firstClick;
 
-  void buildBoard() {
-    memset(_mine, 0, sizeof(_mine));
-    memset(_state, 0, sizeof(_state));
-    memset(_adj, 0, sizeof(_adj));
-    int placed = 0;
-    while (placed < 6) {
-      int r = random(0, 6), c = random(0, 6);
-      if (!_mine[r][c]) { _mine[r][c] = 1; placed++; }
-    }
+  void recomputeAdj() {
     for (int r = 0; r < 6; ++r) {
       for (int c = 0; c < 6; ++c) {
         uint8_t cnt = 0;
@@ -32,8 +24,34 @@ private:
     }
   }
 
+  void buildBoard() {
+    memset(_mine, 0, sizeof(_mine));
+    memset(_state, 0, sizeof(_state));
+    _firstClick = true;
+    int placed = 0;
+    while (placed < 4) {
+      int r = random(0, 6), c = random(0, 6);
+      if (!_mine[r][c]) { _mine[r][c] = 1; placed++; }
+    }
+    recomputeAdj();
+  }
+
   void reveal(int r, int c) {
     if (r < 0 || r >= 6 || c < 0 || c >= 6 || _state[r][c] != 0) return;
+
+    // Guarantee first dig is always 100% safe!
+    if (_firstClick) {
+      _firstClick = false;
+      if (_mine[r][c]) {
+        _mine[r][c] = 0;
+        while (true) {
+          int nr = random(0, 6), nc = random(0, 6);
+          if ((nr != r || nc != c) && !_mine[nr][nc]) { _mine[nr][nc] = 1; break; }
+        }
+        recomputeAdj();
+      }
+    }
+
     _state[r][c] = 1;
     if (_mine[r][c]) {
       for (int y = 0; y < 6; ++y)
@@ -54,7 +72,6 @@ private:
         if (!_mine[y][x] && _state[y][x] != 1) hiddenSafe++;
     if (hiddenSafe == 0) {
       _score += 100;
-      _won = true;
       buildBoard();
     }
   }
@@ -67,7 +84,6 @@ public:
 
   void init() override {
     _cur = 0;
-    _won = false;
     _score = 0;
     _isGameOver = false;
     _newHighScore = false;
@@ -94,29 +110,34 @@ public:
   }
 
   void render(DisplayCanvas& gfx) override {
-    gfx.fillRect(0, 13, SCREEN_WIDTH, SCREEN_HEIGHT - 13, Color565::rgb(12, 18, 30));
+    gfx.fillGradientV(0, 13, SCREEN_WIDTH, SCREEN_HEIGHT - 13, Color565::rgb(12, 18, 30), Color565::rgb(18, 28, 48));
     int16_t ox = 16, oy = 17, cs = 16;
+    bool blink = ((millis() / 250) & 1) != 0;
     for (int r = 0; r < 6; ++r) {
       for (int c = 0; c < 6; ++c) {
         int16_t x = ox + c * cs, y = oy + r * cs;
         uint8_t st = _state[r][c];
         if (st == 0) {
-          gfx.fillRect(x + 1, y + 1, cs - 2, cs - 2, Color565::GrayMid);
+          gfx.fillRect(x + 1, y + 1, cs - 2, cs - 2, Color565::rgb(78, 92, 118));
+          gfx.drawFastHLine(x + 1, y + 1, cs - 2, Color565::GrayLight);
+          gfx.drawFastVLine(x + 1, y + 1, cs - 2, Color565::GrayLight);
         } else if (st == 2) {
           gfx.fillRect(x + 1, y + 1, cs - 2, cs - 2, Color565::Navy);
-          gfx.drawText(x + 5, y + 4, "F", Color565::Gold);
+          gfx.fillTriangle(x + 5, y + 3, x + 12, y + 6, x + 5, y + 9, Color565::Red);
+          gfx.drawFastVLine(x + 5, y + 3, 10, Color565::White);
         } else if (_mine[r][c]) {
           gfx.fillRect(x + 1, y + 1, cs - 2, cs - 2, Color565::Crimson);
-          gfx.drawText(x + 5, y + 4, "*", Color565::White);
+          gfx.fillCircle(x + 8, y + 8, 4, Color565::Black);
         } else {
-          gfx.fillRect(x + 1, y + 1, cs - 2, cs - 2, Color565::rgb(26, 36, 54));
+          gfx.fillRect(x + 1, y + 1, cs - 2, cs - 2, Color565::rgb(24, 34, 52));
           if (_adj[r][c] > 0) {
             char b[4]; snprintf(b, sizeof(b), "%u", _adj[r][c]);
-            gfx.drawText(x + 5, y + 4, b, _adj[r][c] == 1 ? Color565::NeonCyan : Color565::Lime);
+            uint16_t nc = (_adj[r][c] == 1) ? Color565::NeonCyan : (_adj[r][c] == 2 ? Color565::Lime : Color565::Red);
+            gfx.drawText(x + 5, y + 4, b, nc);
           }
         }
         if ((r * 6 + c) == _cur) {
-          gfx.drawRect(x, y, cs, cs, Color565::Gold);
+          gfx.drawRect(x, y, cs, cs, blink ? Color565::Gold : Color565::White);
         }
       }
     }
