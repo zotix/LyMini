@@ -18,6 +18,20 @@ private:
   uint8_t _rowOffset = 2;
   bool    _colorBgr  = true;
   uint8_t _brightness = 85; // 0..100% (Hardware PWM + Software RGB565 Luminance Scaling)
+  bool    _isSleeping = false;
+  uint32_t _lastFrameHash = 0;
+  bool     _hasLastFrame = false;
+
+  uint32_t computeFrameHash() const {
+    uint32_t h = 2166136261u ^ _brightness;
+    const uint32_t* p = reinterpret_cast<const uint32_t*>(_buffer);
+    constexpr int words = (SCREEN_WIDTH * SCREEN_HEIGHT) / 2;
+    for (int i = 0; i < words; ++i) {
+      h ^= p[i];
+      h *= 16777619u;
+    }
+    return h;
+  }
 
   inline void writeCommand(uint8_t cmd) {
     digitalWrite(PIN_TFT_DC, LOW);
@@ -95,12 +109,27 @@ public:
     writeData(0x8A); writeData(0xEE);
 
     writeCommand(0xC5); // VMCTR1
-    writeData(0x0E);
+    writeData(0x0A);
 
     writeCommand(0x20); // INVOFF (or 0x21 INVON based on panel)
     
     // MADCTL Memory Access Control (Default Rotation 3 = 270 deg, BGR)
     setRotation(3, true);
+
+    // ST7735S Gamma Correction (GMCTRP1 / GMCTRN1) for deeper blacks & sharper contrast
+    writeCommand(0xE0);
+    const uint8_t gmctrp1[16] = {
+      0x02, 0x1C, 0x07, 0x12, 0x37, 0x32, 0x29, 0x2D,
+      0x29, 0x25, 0x2B, 0x39, 0x00, 0x01, 0x03, 0x10
+    };
+    for (int i = 0; i < 16; ++i) writeData(gmctrp1[i]);
+
+    writeCommand(0xE1);
+    const uint8_t gmctrn1[16] = {
+      0x03, 0x1D, 0x07, 0x06, 0x2E, 0x2C, 0x29, 0x2D,
+      0x2E, 0x2E, 0x37, 0x3F, 0x00, 0x00, 0x02, 0x10
+    };
+    for (int i = 0; i < 16; ++i) writeData(gmctrn1[i]);
 
     writeCommand(0x3A); // COLMOD 16-bit color
     writeData(0x05);
@@ -161,6 +190,27 @@ public:
 
   uint8_t getBrightness() const { return _brightness; }
 
+  void sleepDisplay() {
+    if (_isSleeping || !_spi) return;
+    _isSleeping = true;
+    writeCommand(0x28); // DISPOFF (Display Off)
+    delay(20);
+    writeCommand(0x10); // SLPIN (Sleep In)
+    delay(120);
+  }
+
+  void wakeDisplay() {
+    if (!_isSleeping || !_spi) return;
+    writeCommand(0x11); // SLPOUT (Sleep Out)
+    delay(120);
+    writeCommand(0x29); // DISPON (Display On)
+    delay(20);
+    _isSleeping = false;
+    present();
+  }
+
+  bool isSleeping() const { return _isSleeping; }
+
   uint16_t* getBuffer() { return _buffer; }
 
   void clear(uint16_t color = Color565::Black) {
@@ -189,8 +239,28 @@ public:
     writeCommand(0x2C); // RAMWR
   }
 
+  void presentIfChanged() {
+    if (!_spi || _isSleeping) return;
+    if (_shakeFrames == 0 && _hasLastFrame) {
+      uint32_t h = computeFrameHash();
+      if (h == _lastFrameHash) return;
+      _lastFrameHash = h;
+    } else {
+      _lastFrameHash = computeFrameHash();
+    }
+    _hasLastFrame = true;
+    presentInternal();
+  }
+
   void present() {
-    if (!_spi) return;
+    if (!_spi || _isSleeping) return;
+    _lastFrameHash = computeFrameHash();
+    _hasLastFrame = true;
+    presentInternal();
+  }
+
+private:
+  void presentInternal() {
 
     if (_shakeFrames > 0) {
       _shakeX = (random(0, 3) - 1);
@@ -244,6 +314,7 @@ public:
     digitalWrite(PIN_TFT_CS, HIGH);
   }
 
+public:
   inline void drawPixel(int16_t x, int16_t y, uint16_t color) {
     x += _shakeX;
     y += _shakeY;

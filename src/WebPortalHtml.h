@@ -7,7 +7,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>LyMini Arcade & Smart TV v0.2.5</title>
+<title>LyMini Arcade & Smart TV v0.2.6</title>
 <style>
   :root {
     --bg: #0b0f17;
@@ -97,7 +97,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 <div class="container">
   <div class="topbar">
     <div>
-      <h1>🕹️ LyMini <span class="badge">v0.2.5</span> <span id="connBadge" class="badge online">🟢 Online</span></h1>
+      <h1>🕹️ LyMini <span class="badge">v0.2.6</span> <span id="connBadge" class="badge online">🟢 Online</span></h1>
       <div class="hint" id="statusText">IP: <b>192.168.4.1</b> | <b>http://lymini.local</b></div>
     </div>
     <div style="display:flex; gap:6px; align-items:center;">
@@ -234,6 +234,10 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
           <label data-i18n="id_cycle">สลับหน้าทุกๆ (วินาที):</label>
           <input type="number" id="inpIdleCycle" min="5" max="120" value="12" />
         </div>
+        <div>
+          <label data-i18n="sleep_timeout">เข้า Sleep Mode ปิดจอ/พักเครื่อง (นาที, 0=ปิด):</label>
+          <input type="number" id="inpSleepTime" min="0" max="720" step="any" value="45" />
+        </div>
       </div>
       <button type="button" class="green" onclick="saveAllSettings()" data-i18n="btn_save">💾 บันทึกการตั้งค่า</button>
     </div>
@@ -254,13 +258,13 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     <div class="card" style="border-color:var(--accent);">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <h2 style="margin:0;" data-i18n="br_title">🔆 ความสว่างสูงสุด (Max Brightness — Auto Update)</h2>
-        <span id="briValueBadge" class="badge" style="font-size:14px;">85%</span>
+        <span id="briValueBadge" class="badge" style="font-size:14px;">75%</span>
       </div>
       <p class="hint" data-i18n="br_desc">เลื่อนแถบเพื่อปรับความสว่างหน้าจอแบบเรียลไทม์ทันที (และเป็นค่าเพดานความสว่างสูงสุดที่หน้าจอจะไม่สว่างเกินค่านี้)</p>
-      <input type="range" id="rngBright" min="5" max="100" value="85" style="margin-top:10px;" />
+      <input type="range" id="rngBright" min="5" max="100" step="5" value="75" style="margin-top:10px;" />
       <div class="row">
-        <button type="button" class="sm" onclick="setQuickBri(15)">15%</button>
-        <button type="button" class="sm" onclick="setQuickBri(40)">40%</button>
+        <button type="button" class="sm" onclick="setQuickBri(25)">25%</button>
+        <button type="button" class="sm" onclick="setQuickBri(50)">50%</button>
         <button type="button" class="sm" onclick="setQuickBri(75)">75%</button>
         <button type="button" class="sm" onclick="setQuickBri(100)">100%</button>
       </div>
@@ -268,16 +272,31 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       <hr style="border:none; border-top:1px solid var(--border); margin:14px 0;">
 
       <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2 style="margin:0; color:var(--accent);" data-i18n="idb_title">🌙 ความสว่างโหมดพักหน้าจอ (Idle Brightness)</h2>
+        <span id="idleBriValueBadge" class="badge" style="font-size:14px;">45%</span>
+      </div>
+      <p class="hint" data-i18n="idb_desc">ความสว่างเมื่อเข้าโหมด Idle TV (>= 30 วินาที) ปรับทีละ 5%</p>
+      <input type="range" id="rngIdleBright" min="5" max="100" step="5" value="45" style="margin-top:10px;" />
+      <div class="row">
+        <button type="button" class="sm" onclick="setQuickIdleBri(25)">25%</button>
+        <button type="button" class="sm" onclick="setQuickIdleBri(45)">45%</button>
+        <button type="button" class="sm" onclick="setQuickIdleBri(60)">60%</button>
+        <button type="button" class="sm" onclick="setQuickIdleBri(80)">80%</button>
+      </div>
+
+      <hr style="border:none; border-top:1px solid var(--border); margin:14px 0;">
+
+      <div style="display:flex; justify-content:space-between; align-items:center;">
         <h2 style="margin:0; color:var(--green);" data-i18n="ec_title">🔋 ความสว่างช่วงประหยัดพลังงาน / พักหน้าจอ (Eco Brightness)</h2>
-        <span id="ecoBriValueBadge" class="badge" style="font-size:14px; color:var(--green);">25%</span>
+        <span id="ecoBriValueBadge" class="badge" style="font-size:14px; color:var(--green);">15%</span>
       </div>
       <p class="hint" data-i18n="ec_desc">เลื่อนแถบเพื่อตั้งค่าความสว่างเมื่ออยู่ในโหมดประหยัดพลังงาน Eco (>= 5 นาที) แบบเรียลไทม์ (ไม่เกินค่า Max Brightness)</p>
-      <input type="range" id="rngEcoBright" min="5" max="100" value="25" style="margin-top:10px; accent-color:var(--green);" />
+      <input type="range" id="rngEcoBright" min="5" max="100" step="5" value="15" style="margin-top:10px; accent-color:var(--green);" />
       <div class="row">
-        <button type="button" class="sm green" onclick="setQuickEcoBri(10)">10%</button>
+        <button type="button" class="sm green" onclick="setQuickEcoBri(5)">5%</button>
+        <button type="button" class="sm green" onclick="setQuickEcoBri(15)">15%</button>
         <button type="button" class="sm green" onclick="setQuickEcoBri(25)">25%</button>
-        <button type="button" class="sm green" onclick="setQuickEcoBri(50)">50%</button>
-        <button type="button" class="sm green" onclick="setQuickEcoBri(80)">80%</button>
+        <button type="button" class="sm green" onclick="setQuickEcoBri(35)">35%</button>
       </div>
     </div>
 
@@ -366,7 +385,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
   <div class="tab-pane" id="tab4">
     <div class="card" style="text-align:center;">
       <h2 data-i18n="ab_title">☕ เกี่ยวกับ LyMini & เลี้ยงกาแฟผู้พัฒนา (PromptPay QR)</h2>
-      <p class="hint" data-i18n="ab_desc">LyMini ESP32-C3 1.44" Retro Arcade & Smart Idle TV v0.2.2 by Zotix</p>
+      <p class="hint" data-i18n="ab_desc">LyMini ESP32-C3 1.44" Retro Arcade & Smart Idle TV v0.2.6 by Zotix</p>
 
       <div style="margin: 14px auto; display:inline-block; padding:12px; background:#fff; border-radius:12px;">
         <canvas id="qrCanvas" width="112" height="112" style="width:224px; height:224px; image-rendering:pixelated; display:block;"></canvas>
@@ -375,6 +394,35 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 
       <div class="row">
         <button type="button" class="gold" id="btnShowQrEsp" data-i18n="ab_show_esp">👁️ แสดง QR Code บนจอ LyMini ทันที</button>
+      </div>
+    </div>
+
+    <div class="card" style="border-color:var(--accent);">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2 style="margin:0;">🚀 อัปเดตเฟิร์มแวร์ (OTA Update)</h2>
+        <span id="curFwVer" class="badge">v0.3.0</span>
+      </div>
+      <p class="hint">อัปเดตเกมใหม่หรือระบบผ่าน Wi-Fi โดยไม่ลบข้อมูลรูป/วิดีโอใน LittleFS และไม่ลบ High Score (หรือกดปุ่ม BOOT บนบอร์ดค้าง 10 วินาที)</p>
+
+      <div style="margin-top:10px; padding:10px; background:rgba(0,0,0,0.2); border-radius:8px;">
+        <label style="margin-top:0;">🌐 Check &amp; Update Online (GitHub: zotix/Lymini)</label>
+        <input type="text" id="inpOtaUrl" placeholder="URL .bin (เว้นว่างเพื่อดึงจาก GitHub Release ล่าสุด)" />
+        <div class="row" style="margin-top:8px;">
+          <button type="button" id="btnCheckOta">🔍 Check Online</button>
+          <button type="button" class="green" id="btnRunOnlineOta">⬇️ Update Online</button>
+        </div>
+        <div id="otaOnlineMsg" class="hint" style="margin-top:6px;"></div>
+      </div>
+
+      <hr style="border:none; border-top:1px solid var(--border); margin:14px 0;">
+
+      <div>
+        <label style="margin-top:0;">📦 Manual Firmware Upload (.bin)</label>
+        <input type="file" id="otaFileInput" accept=".bin" />
+        <div class="row" style="margin-top:8px;">
+          <button type="button" class="purple" id="btnUploadOta">🚀 Upload &amp; Flash .bin</button>
+        </div>
+        <div id="otaUploadMsg" class="hint" style="margin-top:6px;"></div>
       </div>
     </div>
   </div>
@@ -417,6 +465,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       id_random: '🔀 Random Mode (สุ่มลำดับหน้าจอ และสุ่มรูปภาพ/วิดีโอ)',
       id_timeout: 'เข้าสู่ Idle Display (40MHz / แสง 50%) เมื่อไม่กดปุ่ม (วินาที):',
       eco_timeout: 'เข้าสู่ Eco Display (20MHz / แสง 25%) เมื่อไม่กดปุ่ม (วินาที):',
+      sleep_timeout: 'เข้าสู่ Sleep Mode ปิดจอ/พักเครื่อง (นาที, 0=ปิด):',
       id_cycle: 'สลับหน้าทุกๆ (วินาที):',
       gal_title: '📂 คลังภาพและวิดีโอในบอร์ด (LittleFS)',
       gal_hint: 'ติ๊กถูกเพื่อเปิดแสดงในรอบ Idle หรือกด 👁️ เพื่อยิงขึ้นจอ LyMini ทันที',
@@ -444,7 +493,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       wt_add: '➕ เพิ่มเมือง',
       wt_refresh: '🔄 อัปเดตสภาพอากาศทุกเมืองเดี๋ยวนี้',
       ab_title: '☕ เกี่ยวกับ LyMini & เลี้ยงกาแฟผู้พัฒนา (PromptPay QR)',
-      ab_desc: 'LyMini ESP32-C3 1.44" Retro Arcade & Smart Idle TV v0.2.2 by Zotix',
+      ab_desc: 'LyMini ESP32-C3 1.44" Retro Arcade & Smart Idle TV v0.2.6 by Zotix',
       ab_scan: '📱 สแกน PromptPay QR เพื่อสนับสนุนค่ากาแฟผู้พัฒนา (Zotix)',
       ab_show_esp: '👁️ แสดง QR Code บนจอ LyMini ทันที',
       btn_save: '💾 บันทึกการตั้งค่า'
@@ -483,6 +532,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       id_random: '🔀 Random Mode (Shuffle screens, photos & videos)',
       id_timeout: 'Enter Idle Display (40MHz / 50% Bri) after inactivity (sec):',
       eco_timeout: 'Enter Eco Display (20MHz / 25% Bri) after inactivity (sec):',
+      sleep_timeout: 'Enter Sleep Mode Screen-Off (minutes, 0=off):',
       id_cycle: 'Cycle screen every (sec):',
       gal_title: '📂 On-Board Media Gallery (LittleFS)',
       gal_hint: 'Check to enable in Idle rotation, or click 👁️ to display immediately on LyMini',
@@ -510,7 +560,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       wt_add: '➕ Add City',
       wt_refresh: '🔄 Refresh All Weather Now',
       ab_title: '☕ About LyMini & Buy Me a Coffee (PromptPay QR)',
-      ab_desc: 'LyMini ESP32-C3 1.44" Retro Arcade & Smart Idle TV v0.2.2 by Zotix',
+      ab_desc: 'LyMini ESP32-C3 1.44" Retro Arcade & Smart Idle TV v0.2.6 by Zotix',
       ab_scan: '📱 Scan PromptPay QR Code to Support the Developer (Zotix)',
       ab_show_esp: '👁️ Show QR Code on LyMini Now',
       btn_save: '💾 Save Settings'
@@ -647,6 +697,37 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     sendEcoBrightnessAuto(val, true);
   };
 
+  // --- Instant Auto-Update Idle Brightness Slider ---
+  const rngIdleBright = document.getElementById('rngIdleBright');
+  const idleBriBadge = document.getElementById('idleBriValueBadge');
+  let idleBriBusy = false, idleBriQueuedVal = null;
+
+  function sendIdleBrightnessAuto(val, saveToNvs) {
+    idleBriBadge.innerText = val + '%';
+    if (idleBriBusy && !saveToNvs) { idleBriQueuedVal = val; return; }
+    idleBriBusy = true;
+    fetch(`/api/idle_brightness?val=${val}&save=${saveToNvs ? 1 : 0}`, { method: 'POST' }).finally(() => {
+      idleBriBusy = false;
+      if (idleBriQueuedVal !== null) {
+        const nextV = idleBriQueuedVal;
+        idleBriQueuedVal = null;
+        sendIdleBrightnessAuto(nextV, false);
+      }
+    });
+  }
+
+  rngIdleBright.addEventListener('input', (e) => {
+    sendIdleBrightnessAuto(e.target.value, false);
+  });
+  rngIdleBright.addEventListener('change', (e) => {
+    sendIdleBrightnessAuto(e.target.value, true);
+  });
+
+  window.setQuickIdleBri = (val) => {
+    rngIdleBright.value = val;
+    sendIdleBrightnessAuto(val, true);
+  };
+
   // --- Preview Any Idle Mode Immediately on ESP32 ---
   window.previewIdle = async (scrIdx, cityIdx = -1) => {
     document.getElementById('chkNightEn').checked = false;
@@ -688,7 +769,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
   function getSteppedCanvas(source) {
     let curW = source.naturalWidth || source.videoWidth || source.width;
     let curH = source.naturalHeight || source.videoHeight || source.height;
-    if (!curW || !curH || (curW <= 256 && curH <= 256)) return source;
+    if (!curW || !curH || (curW <= 512 && curH <= 512)) return source;
 
     let srcCanvas = document.createElement('canvas');
     srcCanvas.width = curW;
@@ -696,9 +777,9 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     let sctx = srcCanvas.getContext('2d');
     sctx.drawImage(source, 0, 0);
 
-    while (curW > 256 || curH > 256) {
-      const nextW = Math.max(256, Math.floor(curW / 2));
-      const nextH = Math.max(256, Math.floor(curH / 2));
+    while (curW > 512 || curH > 512) {
+      const nextW = Math.max(32, Math.round(curW * 0.5));
+      const nextH = Math.max(32, Math.round(curH * 0.5));
       const stepCanvas = document.createElement('canvas');
       stepCanvas.width = nextW;
       stepCanvas.height = nextH;
@@ -801,20 +882,27 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
   });
 
   // Mouse & Touch Gestures
-  canvas.addEventListener('mousedown', (e) => { isDragging = true; startX = e.clientX - panX; startY = e.clientY - panY; });
+  canvas.addEventListener('mousedown', (e) => { isDragging = true; startX = e.clientX - panX * 2; startY = e.clientY - panY * 2; });
   window.addEventListener('mousemove', (e) => {
     if (!isDragging) return;
-    panX = e.clientX - startX; panY = e.clientY - startY;
+    panX = (e.clientX - startX) * 0.5; panY = (e.clientY - startY) * 0.5;
     renderCanvas();
   });
   window.addEventListener('mouseup', () => { isDragging = false; });
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if (e.deltaY < 0) zoom *= 1.1;
+    else zoom /= 1.1;
+    zoom = Math.max(0.3, Math.min(5.0, zoom));
+    renderCanvas();
+  }, { passive: false });
 
   canvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
     if (e.touches.length === 1) {
       isDragging = true;
-      startX = e.touches[0].clientX - panX;
-      startY = e.touches[0].clientY - panY;
+      startX = e.touches[0].clientX - panX * 2;
+      startY = e.touches[0].clientY - panY * 2;
     } else if (e.touches.length === 2) {
       isDragging = false;
       const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -826,8 +914,8 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
   canvas.addEventListener('touchmove', (e) => {
     e.preventDefault();
     if (e.touches.length === 1 && isDragging) {
-      panX = e.touches[0].clientX - startX;
-      panY = e.touches[0].clientY - startY;
+      panX = (e.touches[0].clientX - startX) * 0.5;
+      panY = (e.touches[0].clientY - startY) * 0.5;
       renderCanvas();
     } else if (e.touches.length === 2 && lastPinchDist > 0) {
       const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -1197,13 +1285,23 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       if (st.ecoTimeout !== undefined) {
         document.getElementById('inpEcoTime').value     = st.ecoTimeout;
       }
+      if (st.sleepTimeout !== undefined) {
+        document.getElementById('inpSleepTime').value   = Math.round(st.sleepTimeout / 60);
+      }
       document.getElementById('inpIdleCycle').value     = st.idleCycle;
 
       rngBright.value = st.bright;
       briBadge.innerText = st.bright + '%';
+      if (st.idleBright !== undefined) {
+        rngIdleBright.value = st.idleBright;
+        idleBriBadge.innerText = st.idleBright + '%';
+      }
       if (st.ecoBright !== undefined) {
         rngEcoBright.value = st.ecoBright;
         ecoBriBadge.innerText = st.ecoBright + '%';
+      }
+      if (st.version) {
+        document.getElementById('curFwVer').innerText = 'v' + st.version;
       }
 
       document.getElementById('selRotation').value   = st.rot;
@@ -1301,8 +1399,10 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       idlernd: document.getElementById('chkRandom').checked ? 1 : 0,
       idletime: document.getElementById('inpIdleTime').value,
       ecotime: document.getElementById('inpEcoTime').value,
+      sleeptime: Math.round(Number(document.getElementById('inpSleepTime').value || 0) * 60),
       idlecyc: document.getElementById('inpIdleCycle').value,
       bright: rngBright.value,
+      idlebri: rngIdleBright.value,
       ecobri: rngEcoBright.value,
       rot: document.getElementById('selRotation').value,
       btnrot: document.getElementById('chkBtnRot').checked ? 1 : 0,
@@ -1347,6 +1447,67 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     await fetch('/api/save_wifi?' + params.toString(), { method: 'POST' });
     alert(curLang === 'th' ? '✅ บันทึก Wi-Fi เรียบร้อยแล้ว!' : '✅ Wi-Fi saved!');
     loadStatusAndMedia();
+  };
+
+  // --- OTA Check & Online Update ---
+  document.getElementById('btnCheckOta').onclick = async () => {
+    const msg = document.getElementById('otaOnlineMsg');
+    msg.innerText = '🔍 Checking GitHub Releases...';
+    try {
+      const r = await fetch('/api/ota_check');
+      const d = await r.json();
+      if (!d.ok) {
+        msg.innerText = '❌ Check failed: ' + (d.error || 'Unknown error');
+      } else if (d.hasUpdate) {
+        msg.innerText = `✨ New version v${d.latest} available! (Current: v${d.current})`;
+        if (d.binUrl) document.getElementById('inpOtaUrl').value = d.binUrl;
+      } else {
+        msg.innerText = `✅ Up to date (Current: v${d.current}, Latest: v${d.latest})`;
+      }
+    } catch (e) {
+      msg.innerText = '❌ Network error checking OTA';
+    }
+  };
+
+  document.getElementById('btnRunOnlineOta').onclick = async () => {
+    const msg = document.getElementById('otaOnlineMsg');
+    const url = document.getElementById('inpOtaUrl').value.trim();
+    if (!confirm('Start online OTA update? Device will reboot automatically when done.')) return;
+    msg.innerText = '⏳ Downloading & flashing firmware... Do not power off!';
+    try {
+      const r = await fetch('/api/ota_online' + (url ? ('?url=' + encodeURIComponent(url)) : ''), { method: 'POST' });
+      const d = await r.json();
+      if (d.ok) {
+        msg.innerText = '✅ Update complete! Rebooting...';
+      } else {
+        msg.innerText = '❌ OTA failed: ' + (d.error || 'Error');
+      }
+    } catch (e) {
+      msg.innerText = '🔄 Rebooting or connection closed...';
+    }
+  };
+
+  // --- Manual OTA .bin Upload ---
+  document.getElementById('btnUploadOta').onclick = () => {
+    const file = document.getElementById('otaFileInput').files[0];
+    const msg = document.getElementById('otaUploadMsg');
+    if (!file) { msg.innerText = '⚠️ Select a .bin firmware file first.'; return; }
+    if (!confirm('Flash ' + file.name + ' (' + Math.round(file.size / 1024) + ' KB)?')) return;
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/ota');
+    xhr.upload.onprogress = (ev) => {
+      if (ev.lengthComputable) {
+        const pct = Math.round((ev.loaded * 100) / ev.total);
+        msg.innerText = `⏳ Uploading & Flashing: ${pct}%`;
+      }
+    };
+    xhr.onload = () => {
+      msg.innerText = (xhr.status === 200) ? '✅ OTA Complete! Rebooting...' : '❌ OTA Failed!';
+    };
+    xhr.onerror = () => { msg.innerText = '❌ Upload error!'; };
+    const fd = new FormData();
+    fd.append('firmware', file);
+    xhr.send(fd);
   };
 
   applyLang();

@@ -36,8 +36,8 @@ private:
   uint8_t  _batteryPct = 100;
   bool     _usbConnected = true;
   uint8_t  _currentCpuMhz = 160;
-  uint8_t  _appliedBrightness = 85;
-  uint8_t  _previewBrightnessVal = 85;
+  uint8_t  _appliedBrightness = 75;
+  uint8_t  _previewBrightnessVal = 75;
   uint32_t _brightnessPreviewUntilMs = 0; // Holds previewed brightness while adjusting via Web or Menu
 
   // Multi-location Weather state (fetched automatically when Wi-Fi STA connects)
@@ -62,10 +62,9 @@ private:
   }
 
   void setCpuSpeed(uint8_t mhz) {
-    if (_currentCpuMhz == mhz) return;
     if (_wifiEnabled && mhz < 160) mhz = 160;
     setCpuFrequencyMhz(mhz);
-    _currentCpuMhz = mhz;
+    _currentCpuMhz = (uint8_t)getCpuFrequencyMhz();
   }
 
 public:
@@ -97,10 +96,31 @@ public:
 
   uint8_t getBatteryPercent() const { return _batteryPct; }
   bool isUsbOrCharging() const { return _usbConnected; }
-  uint8_t getCpuMhz() const { return _currentCpuMhz; }
+  uint8_t getCpuMhz() const { return (uint8_t)getCpuFrequencyMhz(); }
+  bool _forceEco = false;
+  uint32_t _lastIdleSec = 0;
+
+  void forceEcoMode() {
+    _forceEco = true;
+    requestWifiOff();
+    setCpuSpeed(20);
+  }
+  void clearForceEco() { _forceEco = false; }
+  bool isForceEco() const { return _forceEco; }
+
   bool isEcoMode(uint32_t idleSec) const {
+    if (_forceEco) return true;
     if (gSettings.data.eco_timeout_sec == 0) return false;
     return (idleSec >= gSettings.data.eco_timeout_sec);
+  }
+
+  bool isEcoMode() const {
+    return isEcoMode(_lastIdleSec);
+  }
+
+  bool isSleepMode(uint32_t idleSec) const {
+    if (gSettings.data.sleep_timeout_sec == 0) return false;
+    return (idleSec >= gSettings.data.sleep_timeout_sec);
   }
 
   // Apply and preview Max Brightness immediately (even if device is currently in Idle mode!)
@@ -119,6 +139,18 @@ public:
     gSettings.data.eco_brightness = constrain(ecoBri, 5, 100);
     uint8_t maxBri = constrain(gSettings.data.brightness, 5, 100);
     _previewBrightnessVal = min(gSettings.data.eco_brightness, maxBri);
+    _brightnessPreviewUntilMs = millis() + 12000UL;
+    _appliedBrightness = _previewBrightnessVal;
+    if (display) {
+      display->setBrightness(_appliedBrightness);
+    }
+  }
+
+  // Apply and preview Idle Brightness immediately on physical display
+  void applyIdleBrightnessNow(uint8_t idleBri, DisplayCanvas* display) {
+    gSettings.data.idle_brightness = constrain(idleBri, 5, 100);
+    uint8_t maxBri = constrain(gSettings.data.brightness, 5, 100);
+    _previewBrightnessVal = min(gSettings.data.idle_brightness, maxBri);
     _brightnessPreviewUntilMs = millis() + 12000UL;
     _appliedBrightness = _previewBrightnessVal;
     if (display) {
@@ -276,6 +308,8 @@ public:
 
     setCpuSpeed(160);
     _wifiEnabled = true;
+    pinMode(PIN_STATUS_LED, OUTPUT);
+    digitalWrite(PIN_STATUS_LED, HIGH);
 
     if (gSettings.data.wifi_count > 0) {
       WiFi.mode(WIFI_AP_STA);
@@ -305,6 +339,8 @@ public:
     WiFi.disconnect(true, false);
     WiFi.mode(WIFI_OFF);
     _wifiEnabled = false;
+    pinMode(PIN_STATUS_LED, OUTPUT);
+    digitalWrite(PIN_STATUS_LED, LOW);
   }
 
   void toggleWifi() {
@@ -385,35 +421,42 @@ public:
       }
     }
 
-    // 4. Dynamic CPU Frequency Scaling (Boost when active, throttle in Idle/Eco)
+    _lastIdleSec = idleSec;
+
+    // 4. Dynamic CPU Frequency Scaling (Boost when active, throttle in Idle/Eco/Sleep)
+    bool isSleep = inIdle && isSleepMode(idleSec);
     bool isEco = inIdle && isEcoMode(idleSec);
+
+    // If entering Eco or Sleep mode, turn off Wi-Fi immediately so CPU can scale down
+    if ((isEco || isSleep) && _wifiEnabled && (WiFi.softAPgetStationNum() == 0)) {
+      requestWifiOff();
+    }
 
     if (_wifiEnabled || inGame || inMenu) {
       setCpuSpeed(160); // 160 MHz Boost for Active gameplay / Web / Menu responsiveness
-    } else if (isEco) {
-      setCpuSpeed(20);  // 20 MHz Ultra Low Power in Eco Mode (>= 5 min)
+    } else if (isSleep || isEco) {
+      setCpuSpeed(20);  // 20 MHz Ultra Low Power in Sleep Mode (>= 45 min) or Eco Mode (>= 5 min)
     } else if (inIdle) {
       setCpuSpeed(40);  // 40 MHz Balanced Power in Idle Mode (>= 30 sec)
     } else {
       setCpuSpeed(160);
     }
 
-    // 5. Max Brightness Ceiling + Multi-stage Brightness (Active / Idle 50% / Eco 25%) + Night Schedule
+    // 5. Max Brightness Ceiling + Multi-stage Brightness (Active / Idle 50% / Eco 25% / Sleep 0%) + Night Schedule
     uint8_t maxBri = constrain(gSettings.data.brightness, 5, 100);
     uint8_t targetBri = maxBri;
 
     if (now <= _brightnessPreviewUntilMs) {
       targetBri = min(_previewBrightnessVal, maxBri);
     } else if (inIdle) {
-      if (isNightScreenOffTime()) {
-        targetBri = 0; // Night Mode Screen-Off (0%)
+      if (isSleep || isNightScreenOffTime()) {
+        targetBri = 0; // Sleep Mode Screen-Off or Night Mode (0%)
       } else if (isEco) {
-        // Eco Display: 25% brightness (>= 5 min)
-        uint8_t ecoBri = min((uint8_t)constrain(gSettings.data.eco_brightness, 5, 100), maxBri);
-        targetBri = min((uint8_t)25, ecoBri);
+        // Eco Display: use user configured eco brightness (default 25%)
+        targetBri = min((uint8_t)constrain(gSettings.data.eco_brightness, 5, 100), maxBri);
       } else {
-        // Idle Display: 50% brightness (>= 30 sec)
-        targetBri = min((uint8_t)50, maxBri);
+        // Idle Display: use user configured idle brightness (default 40%)
+        targetBri = min((uint8_t)constrain(gSettings.data.idle_brightness, 5, 100), maxBri);
       }
     } else {
       targetBri = maxBri; // Active Mode (Menu / Game)

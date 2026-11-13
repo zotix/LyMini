@@ -9,7 +9,7 @@
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non--Commercial-red.svg)](LICENSE)
 [![Platform: ESP32-C3](https://img.shields.io/badge/Platform-ESP32--C3-yellow.svg)](https://www.espressif.com/en/products/socs/esp32-c3)
 [![Framework: Arduino](https://img.shields.io/badge/Framework-Arduino-blue.svg)](https://www.arduino.cc/)
-[![Version: v0.2.5](https://img.shields.io/badge/Version-v0.2.5-green.svg)](https://github.com/zotix/LyMini/releases)
+[![Version: v0.2.6](https://img.shields.io/badge/Version-v0.2.6-green.svg)](https://github.com/zotix/LyMini/releases)
 
 </div>
 
@@ -50,7 +50,7 @@
   - **Eco Display (โหมดกินไฟต่ำพิเศษ)**: พักหน้าจอครบ 5 นาที $\rightarrow$ ปรับความถี่เหลือ **20 MHz** + ลดแสงเหลือ **25%** (15 FPS) ยืดอายุแบตเตอรี่สูงสุด
   - **Instant Boost**: สัมผัสปุ่มใดๆ จะดีดความเร็ว CPU กลับเป็น **160 MHz** และคืนความสว่างปกติทันที
 - ℹ️ **เมนู About & Support ในหน้า Launcher (เมนูลำดับที่ 11)**:
-  - การ์ดเมนูแสดงเลขเวอร์ชัน (**v0.2.5**) และข้อมูลสเปกบอร์ด ESP32-C3
+  - การ์ดเมนูแสดงเลขเวอร์ชัน (**v0.2.6**) และข้อมูลสเปกบอร์ด ESP32-C3
   - กดปุ่ม **BOOT (OK)** เพื่อเปิดหน้าจอแสดง PromptPay QR Code (112×112 พิกเซล) คมชัดระดับ 1:1 ให้สแกนเลี้ยงกาแฟผู้พัฒนาได้ทันที และกดปุ่มใดๆ เพื่อย้อนกลับสู่เมนูหลัก
 
 ---

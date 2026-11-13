@@ -1,5 +1,7 @@
 #pragma once
 #include <Arduino.h>
+#include "Config.h"
+#include "DisplayCanvas.h"
 
 #define PROMPTPAY_QR_SIZE 112
 const uint8_t PROMPTPAY_QR_332[112 * 112] PROGMEM = {
@@ -453,3 +455,37 @@ const uint8_t PROMPTPAY_QR_332[112 * 112] PROGMEM = {
   0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
   
 };
+
+static inline uint16_t expandPromptPayRgb332(uint8_t c) {
+  uint8_t r3 = (c >> 5) & 0x07;
+  uint8_t g3 = (c >> 2) & 0x07;
+  uint8_t b2 = c & 0x03;
+  uint8_t r5 = (r3 * 31) / 7;
+  uint8_t g6 = (g3 * 63) / 7;
+  uint8_t b5 = (b2 * 31) / 3;
+  return (uint16_t)((r5 << 11) | (g6 << 5) | b5);
+}
+
+inline void renderPromptPayCoffeeQr(DisplayCanvas& gfx) {
+  // 1. Dark navy background
+  gfx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Color565::rgb(10, 20, 44));
+
+  // 2. Top Header Banner: "BUY ME A COFFEE"
+  gfx.fillRect(0, 0, SCREEN_WIDTH, 14, Color565::rgb(0, 62, 126));
+  gfx.drawCenteredText(3, "BUY ME A COFFEE", Color565::Gold);
+
+  // 3. PromptPay QR Code (112x112) centered at (8, 15)
+  const int16_t qx = 8;
+  const int16_t qy = 15;
+  uint16_t* dst = gfx.getBuffer();
+  for (int y = 0; y < PROMPTPAY_QR_SIZE; ++y) {
+    int16_t py = qy + y;
+    if (py < 0 || py >= SCREEN_HEIGHT) continue;
+    for (int x = 0; x < PROMPTPAY_QR_SIZE; ++x) {
+      int16_t px = qx + x;
+      if (px < 0 || px >= SCREEN_WIDTH) continue;
+      uint8_t c332 = pgm_read_byte(&PROMPTPAY_QR_332[y * PROMPTPAY_QR_SIZE + x]);
+      dst[py * SCREEN_WIDTH + px] = expandPromptPayRgb332(c332);
+    }
+  }
+}

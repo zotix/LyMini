@@ -5,6 +5,7 @@
 #include <ESPmDNS.h>
 #include <WebServer.h>
 #include <LittleFS.h>
+#include <Update.h>
 #include "SystemSettings.h"
 #include "WebPortalHtml.h"
 #include "HighScoreStore.h"
@@ -12,6 +13,7 @@
 #include "DisplayCanvas.h"
 #include "IdleScene.h"
 #include "PromptPayQrAsset.h"
+#include "OtaUpdater.h"
 
 class WebPortal {
 private:
@@ -161,12 +163,25 @@ public:
       _server.send(200, "text/plain", "OK");
     });
 
-    // 3b. Instant Auto-Update Eco / Idle Power-Saving Brightness Endpoint
+    // 3b. Instant Auto-Update Eco Power-Saving Brightness Endpoint
     _server.on("/api/eco_brightness", HTTP_POST, [this]() {
       gPower.notifyWebActivity();
       if (_server.hasArg("val")) {
         uint8_t val = constrain(_server.arg("val").toInt(), 5, 100);
         gPower.applyEcoBrightnessNow(val, _display);
+        if (_server.hasArg("save") && _server.arg("save").toInt() == 1) {
+          gSettings.save();
+        }
+      }
+      _server.send(200, "text/plain", "OK");
+    });
+
+    // 3c. Instant Auto-Update Idle Brightness Endpoint
+    _server.on("/api/idle_brightness", HTTP_POST, [this]() {
+      gPower.notifyWebActivity();
+      if (_server.hasArg("val")) {
+        uint8_t val = constrain(_server.arg("val").toInt(), 5, 100);
+        gPower.applyIdleBrightnessNow(val, _display);
         if (_server.hasArg("save") && _server.arg("save").toInt() == 1) {
           gSettings.save();
         }
@@ -224,9 +239,12 @@ public:
       json += "\"idleLockQr\":" + String(gSettings.data.idle_lock_qr) + ",";
       json += "\"idleTimeout\":" + String(gSettings.data.idle_timeout_sec) + ",";
       json += "\"ecoTimeout\":" + String(gSettings.data.eco_timeout_sec) + ",";
+      json += "\"sleepTimeout\":" + String(gSettings.data.sleep_timeout_sec) + ",";
       json += "\"idleCycle\":" + String(gSettings.data.idle_cycle_sec) + ",";
       json += "\"bright\":" + String(gSettings.data.brightness) + ",";
+      json += "\"idleBright\":" + String(gSettings.data.idle_brightness) + ",";
       json += "\"ecoBright\":" + String(gSettings.data.eco_brightness) + ",";
+      json += "\"version\":\"" + String(APP_VERSION) + "\",";
       json += "\"rot\":" + String(gSettings.data.screen_rotation) + ",";
       json += "\"btnRot\":" + String(gSettings.data.btn_rotate_with_screen) + ",";
       json += "\"bgr\":" + String(gSettings.data.color_order_bgr) + ",";
@@ -523,6 +541,9 @@ public:
         uint8_t b = constrain(_server.arg("bright").toInt(), 5, 100);
         gPower.applyMaxBrightnessNow(b, _display);
       }
+      if (_server.hasArg("idlebri")) {
+        gSettings.data.idle_brightness = constrain(_server.arg("idlebri").toInt(), 5, 100);
+      }
       if (_server.hasArg("ecobri")) {
         gSettings.data.eco_brightness = constrain(_server.arg("ecobri").toInt(), 5, 100);
       }
@@ -553,6 +574,9 @@ public:
       if (_server.hasArg("ecotime")) {
         gSettings.data.eco_timeout_sec = constrain(_server.arg("ecotime").toInt(), 30, 3600);
       }
+      if (_server.hasArg("sleeptime")) {
+        gSettings.data.sleep_timeout_sec = constrain(_server.arg("sleeptime").toInt(), 0, 86400);
+      }
       if (_server.hasArg("idlecyc")) {
         gSettings.data.idle_cycle_sec = constrain(_server.arg("idlecyc").toInt(), 5, 120);
       }
@@ -573,6 +597,81 @@ public:
       gPower.notifyWebActivity();
       HighScoreStore::resetAllScores();
       _server.send(200, "text/plain", "Scores Reset");
+    });
+
+    // 17. Manual OTA Firmware Upload (.bin)
+    _server.on("/api/ota", HTTP_POST, [this]() {
+      gPower.notifyWebActivity();
+      bool ok = !Update.hasError();
+      _server.send(ok ? 200 : 500, "application/json",
+                   ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"Update failed\"}");
+      if (ok) {
+        delay(500);
+        ESP.restart();
+      }
+    }, [this]() {
+      gPower.notifyWebActivity();
+      HTTPUpload& upload = _server.upload();
+      if (upload.status == UPLOAD_FILE_START) {
+        if (_display) {
+          OtaUpdater::drawScreenProgress(*_display, "Web OTA Upload", "Flashing...", 0, 0, 0, Color565::Cyan);
+        }
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+          Update.printError(Serial);
+        }
+      } else if (upload.status == UPLOAD_FILE_WRITE) {
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+          Update.printError(Serial);
+        }
+      } else if (upload.status == UPLOAD_FILE_END) {
+        if (Update.end(true)) {
+          if (_display) {
+            OtaUpdater::drawScreenProgress(*_display, "OTA Complete!", "Rebooting...", 100,
+                                           upload.totalSize / 1024, upload.totalSize / 1024, Color565::Lime);
+          }
+        } else {
+          Update.printError(Serial);
+        }
+      }
+    });
+
+    // 18. Online OTA Check (GitHub Releases)
+    _server.on("/api/ota_check", HTTP_GET, [this]() {
+      gPower.notifyWebActivity();
+      OtaReleaseInfo rel = OtaUpdater::checkGitHubRelease();
+      String json = "{";
+      json += "\"ok\":" + String(rel.ok ? "true" : "false") + ",";
+      json += "\"current\":\"" + String(APP_VERSION) + "\",";
+      json += "\"latest\":\"" + rel.latestVersion + "\",";
+      json += "\"hasUpdate\":" + String(rel.hasUpdate ? "true" : "false") + ",";
+      json += "\"binUrl\":\"" + rel.binUrl + "\",";
+      json += "\"error\":\"" + rel.error + "\"";
+      json += "}";
+      _server.send(200, "application/json", json);
+    });
+
+    // 19. Online OTA Update from URL or GitHub Release
+    _server.on("/api/ota_online", HTTP_POST, [this]() {
+      gPower.notifyWebActivity();
+      String url = _server.hasArg("url") ? _server.arg("url") : "";
+      url.trim();
+      if (url.length() == 0) {
+        OtaReleaseInfo rel = OtaUpdater::checkGitHubRelease();
+        if (!rel.ok || rel.binUrl.length() == 0) {
+          _server.send(400, "application/json",
+                       "{\"ok\":false,\"error\":\"" + (rel.error.length() ? rel.error : String("No release .bin found")) + "\"}");
+          return;
+        }
+        url = rel.binUrl;
+      }
+      String err;
+      bool ok = OtaUpdater::performUrlOta(url, _display, err);
+      _server.send(ok ? 200 : 500, "application/json",
+                   ok ? "{\"ok\":true}" : ("{\"ok\":false,\"error\":\"" + err + "\"}"));
+      if (ok) {
+        delay(500);
+        ESP.restart();
+      }
     });
 
     _server.begin();

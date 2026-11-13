@@ -1,7 +1,8 @@
 #pragma once
 #include <Arduino.h>
 
-#define APP_VERSION "0.2.5"
+#define APP_VERSION "0.3.1"
+#define OTA_GITHUB_REPO "zotix/Lymini"
 
 // ============================================================================
 // Spotpear ESP32-C3 1.44" Hardware Pin Definitions (v0.2.1)
@@ -24,6 +25,7 @@
 // Hold durations
 #define BOOT_HOLD_MENU_EXIT_MS 4000UL // Hold BOOT 4 seconds in-game to return to menu
 #define BOOT_HOLD_LAUNCHER_MS  1500UL // Hold BOOT 1.5s in menu to enter Idle TV
+#define BOOT_HOLD_OTA_MS       10000UL // Hold BOOT 10s anywhere to open OTA Update confirmation
 
 // Status / Game FX LED
 #define PIN_STATUS_LED 11 // LED L191 (Active HIGH)
@@ -33,7 +35,7 @@
 #define SCREEN_HEIGHT 128
 
 // Backlight PWM Settings
-#define BL_PWM_FREQ   5000
+#define BL_PWM_FREQ   20000
 #define BL_PWM_RES    8
 #define BL_PWM_CHAN   0
 

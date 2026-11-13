@@ -467,7 +467,11 @@ public:
     gfx.drawCenteredText(68, dateStr, Color565::Gold);
 
     if (!gPower.isWifiEnabled()) {
-      gfx.drawCenteredText(86, "ECO MODE (WiFi OFF)", Color565::Lime);
+      if (gPower.isEcoMode()) {
+        gfx.drawCenteredText(86, "ECO MODE (WiFi OFF)", Color565::Lime);
+      } else {
+        gfx.drawCenteredText(86, "IDLE TV (WiFi OFF)", Color565::Lime);
+      }
       char bStr[24];
       snprintf(bStr, sizeof(bStr), "CPU %uMHz | BATT %u%%", gPower.getCpuMhz(), gPower.getBatteryPercent());
       gfx.drawCenteredText(98, bStr, Color565::SkyBlue);

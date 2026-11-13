@@ -9,7 +9,7 @@
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non--Commercial-red.svg)](LICENSE)
 [![Platform: ESP32-C3](https://img.shields.io/badge/Platform-ESP32--C3-yellow.svg)](https://www.espressif.com/en/products/socs/esp32-c3)
 [![Framework: Arduino](https://img.shields.io/badge/Framework-Arduino-blue.svg)](https://www.arduino.cc/)
-[![Version: v0.2.5](https://img.shields.io/badge/Version-v0.2.5-green.svg)](https://github.com/zotix/LyMini/releases)
+[![Version: v0.2.6](https://img.shields.io/badge/Version-v0.2.6-green.svg)](https://github.com/zotix/LyMini/releases)
 
 </div>
 
@@ -52,7 +52,7 @@ Built with a custom zero-flicker 16-bit RGB565 framebuffer engine running over 4
   - **Eco Battery Saver**: At 5 min inactivity (customizable), scales CPU down to **20 MHz** and **25% brightness** (15 FPS) for extreme battery preservation.
   - **Instant Boost**: Touching any button instantly revs the CPU back to **160 MHz** and restores full brightness.
 - ℹ️ **Launcher About & Support Screen (11th Menu Card)**:
-  - Convenient menu card displaying current firmware version (**v0.2.5**) and platform hardware.
+  - Convenient menu card displaying current firmware version (**v0.2.6**) and platform hardware.
   - Pressing **BOOT (OK)** opens a full-screen, pixel-perfect 112×112 PromptPay QR code for developer donations, with instant one-click return to menu.
 
 ---

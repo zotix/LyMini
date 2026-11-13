@@ -323,11 +323,11 @@ public:
     // If inside Brightness Adjustment Mode:
     if (_adjustingBri) {
       if (input.leftPressed) {
-        int nb = (int)gSettings.data.brightness - 10;
+        int nb = (int)gSettings.data.brightness - 5;
         if (nb < 5) nb = 5;
         gPower.applyMaxBrightnessNow((uint8_t)nb, &display);
       } else if (input.rightPressed) {
-        int nb = (int)gSettings.data.brightness + 10;
+        int nb = (int)gSettings.data.brightness + 5;
         if (nb > 100) nb = 100;
         gPower.applyMaxBrightnessNow((uint8_t)nb, &display);
       } else if (input.okShortReleased || input.menuHold) {
@@ -444,7 +444,7 @@ public:
       gfx.fillRect(2, 115, bw, 11, Color565::Magenta);
       gfx.drawCenteredText(117, "HOLD: ENTER TV MODE", Color565::White);
     } else if (_adjustingBri) {
-      gfx.drawCenteredText(117, "A:-10% B:+10% OK:OK", Color565::Gold);
+      gfx.drawCenteredText(117, "A:-5% B:+5% OK:OK", Color565::Gold);
     } else if (isAbt) {
       gfx.drawCenteredText(117, "BOOT:VIEW PROMPTPAY", Color565::Gold);
     } else {

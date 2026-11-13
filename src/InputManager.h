@@ -16,9 +16,22 @@ struct InputState {
 
   bool bothPressed     = false; // Left + Right pressed together
   bool menuHold        = false; // OK held for >= holdThresholdMs
+  bool okHold10s       = false; // OK held for >= 10000 ms (OTA Update Confirmation)
   uint8_t  okHoldPct   = 0;     // 0..100% progress toward menuHold
   uint16_t okHoldRemMs = 0;     // Remaining ms until menuHold triggers
+  uint16_t okHold10sRemMs = 0;  // Remaining ms until 10s OTA triggers
   uint16_t okHeldMs    = 0;     // Milliseconds OK button has been continuously held
+
+  bool btnAHold5s      = false; // Button A held for >= 5000 ms (Enter Eco)
+  uint8_t  btnAHoldPct = 0;     // 0..100% progress toward 5s
+  uint16_t btnAHoldRemMs = 0;   // Remaining ms until 5s
+  uint16_t btnAHeldMs  = 0;     // Milliseconds Button A has been continuously held
+
+  bool btnBHold5s      = false; // Button B held for >= 5000 ms (Show Coffee QR)
+  uint8_t  btnBHoldPct = 0;     // 0..100% progress toward 5s
+  uint16_t btnBHoldRemMs = 0;   // Remaining ms until 5s
+  uint16_t btnBHeldMs  = 0;     // Milliseconds Button B has been continuously held
+
   bool anyActivity     = false; // Any button was touched or held
 };
 
@@ -31,9 +44,17 @@ private:
   uint32_t _okPressStartTime = 0;
   uint32_t _okLastLowTime = 0;
   bool _okHoldTriggered = false;
+  bool _okHold10sTriggered = false;
+
+  uint32_t _leftPressStartTime = 0;
+  bool _leftHoldTriggered = false;
+
+  uint32_t _rightPressStartTime = 0;
+  bool _rightHoldTriggered = false;
 
   uint32_t _lastActivityMs = 0;
   uint32_t _ledOffTimeMs = 0;
+  bool     _wifiLedState = false;
 
   static inline uint32_t nowRealMs() {
     return (uint32_t)(esp_timer_get_time() / 1000ULL);
@@ -45,13 +66,22 @@ public:
     pinMode(PIN_BTN_RIGHT, INPUT_PULLUP);
     pinMode(PIN_BTN_OK, INPUT_PULLUP);
     pinMode(PIN_STATUS_LED, OUTPUT);
-    digitalWrite(PIN_STATUS_LED, LOW);
+    digitalWrite(PIN_STATUS_LED, _wifiLedState ? HIGH : LOW);
     _lastActivityMs = nowRealMs();
+  }
+
+  void setWifiLedState(bool on) {
+    if (_wifiLedState != on) {
+      _wifiLedState = on;
+      if (_ledOffTimeMs == 0) {
+        digitalWrite(PIN_STATUS_LED, _wifiLedState ? HIGH : LOW);
+      }
+    }
   }
 
   void triggerLed(uint32_t durationMs = 40) {
     if (!gSettings.data.led_enabled) return;
-    digitalWrite(PIN_STATUS_LED, HIGH);
+    digitalWrite(PIN_STATUS_LED, _wifiLedState ? LOW : HIGH);
     _ledOffTimeMs = nowRealMs() + durationMs;
   }
 
@@ -70,7 +100,7 @@ public:
 
     // Check LED timer
     if (_ledOffTimeMs > 0 && now >= _ledOffTimeMs) {
-      digitalWrite(PIN_STATUS_LED, LOW);
+      digitalWrite(PIN_STATUS_LED, _wifiLedState ? HIGH : LOW);
       _ledOffTimeMs = 0;
     }
 
@@ -107,26 +137,85 @@ public:
     if (curOk && !_lastOk) {
       _okPressStartTime = now;
       _okHoldTriggered = false;
-    } else if (curOk && !_okHoldTriggered) {
+      _okHold10sTriggered = false;
+    } else if (curOk) {
       uint32_t heldMs = now - _okPressStartTime;
       st.okHeldMs = (heldMs > 65535) ? 65535 : (uint16_t)heldMs;
-      if (heldMs > 200) {
-        uint32_t p = (heldMs * 100) / holdThresholdMs;
-        st.okHoldPct = (p > 100) ? 100 : (uint8_t)p;
-        st.okHoldRemMs = (heldMs < holdThresholdMs) ? (uint16_t)(holdThresholdMs - heldMs) : 0;
+      if (!_okHoldTriggered) {
+        if (heldMs > 200) {
+          uint32_t p = (heldMs * 100) / holdThresholdMs;
+          st.okHoldPct = (p > 100) ? 100 : (uint8_t)p;
+          st.okHoldRemMs = (heldMs < holdThresholdMs) ? (uint16_t)(holdThresholdMs - heldMs) : 0;
+        }
+        if (heldMs >= holdThresholdMs) {
+          st.menuHold = true;
+          st.okHoldPct = 100;
+          st.okHoldRemMs = 0;
+          _okHoldTriggered = true;
+          triggerLed(150);
+        }
       }
-      if (heldMs >= holdThresholdMs) {
-        st.menuHold = true;
-        st.okHoldPct = 100;
-        st.okHoldRemMs = 0;
-        _okHoldTriggered = true;
-        triggerLed(150);
+      if (!_okHold10sTriggered) {
+        st.okHold10sRemMs = (heldMs < BOOT_HOLD_OTA_MS) ? (uint16_t)(BOOT_HOLD_OTA_MS - heldMs) : 0;
+        if (heldMs >= BOOT_HOLD_OTA_MS) {
+          st.okHold10s = true;
+          st.okHold10sRemMs = 0;
+          _okHold10sTriggered = true;
+          triggerLed(250);
+        }
       }
     } else if (!curOk && _lastOk) {
       if (!_okHoldTriggered && (now - _okPressStartTime < holdThresholdMs)) {
         st.okShortReleased = true;
       }
       _okHoldTriggered = false;
+      _okHold10sTriggered = false;
+    }
+
+    // Button A (IO10) Hold 5s for Eco Mode
+    if (rawLeft && !_lastLeft) {
+      _leftPressStartTime = now;
+      _leftHoldTriggered = false;
+    } else if (rawLeft && !_leftHoldTriggered) {
+      uint32_t heldMs = now - _leftPressStartTime;
+      st.btnAHeldMs = (heldMs > 65535) ? 65535 : (uint16_t)heldMs;
+      if (heldMs > 200) {
+        uint32_t p = (heldMs * 100) / 5000;
+        st.btnAHoldPct = (p > 100) ? 100 : (uint8_t)p;
+        st.btnAHoldRemMs = (heldMs < 5000) ? (uint16_t)(5000 - heldMs) : 0;
+      }
+      if (heldMs >= 5000) {
+        st.btnAHold5s = true;
+        st.btnAHoldPct = 100;
+        st.btnAHoldRemMs = 0;
+        _leftHoldTriggered = true;
+        triggerLed(150);
+      }
+    } else if (!rawLeft && _lastLeft) {
+      _leftHoldTriggered = false;
+    }
+
+    // Button B (IO8) Hold 5s for Buy Me a Coffee QR
+    if (rawRight && !_lastRight) {
+      _rightPressStartTime = now;
+      _rightHoldTriggered = false;
+    } else if (rawRight && !_rightHoldTriggered) {
+      uint32_t heldMs = now - _rightPressStartTime;
+      st.btnBHeldMs = (heldMs > 65535) ? 65535 : (uint16_t)heldMs;
+      if (heldMs > 200) {
+        uint32_t p = (heldMs * 100) / 5000;
+        st.btnBHoldPct = (p > 100) ? 100 : (uint8_t)p;
+        st.btnBHoldRemMs = (heldMs < 5000) ? (uint16_t)(5000 - heldMs) : 0;
+      }
+      if (heldMs >= 5000) {
+        st.btnBHold5s = true;
+        st.btnBHoldPct = 100;
+        st.btnBHoldRemMs = 0;
+        _rightHoldTriggered = true;
+        triggerLed(150);
+      }
+    } else if (!rawRight && _lastRight) {
+      _rightHoldTriggered = false;
     }
 
     _lastLeft  = curLeft;
