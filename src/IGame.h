@@ -3,6 +3,7 @@
 #include "DisplayCanvas.h"
 #include "InputManager.h"
 #include "HighScoreStore.h"
+#include "SystemSettings.h"
 
 class IGame {
 protected:
@@ -30,6 +31,12 @@ public:
     _isGameOver = true;
     _newHighScore = HighScoreStore::submitScore(id(), _score);
     _highScore = HighScoreStore::getHighScore(id());
+    if (_newHighScore && gSettings.data.led_enabled) {
+      for (int i = 0; i < 3; ++i) {
+        digitalWrite(PIN_STATUS_LED, HIGH); delay(25);
+        digitalWrite(PIN_STATUS_LED, LOW);  delay(25);
+      }
+    }
   }
 
   // Draw Standard Retro Arcade HUD Bar

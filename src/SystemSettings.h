@@ -59,6 +59,8 @@ struct SystemSettingsData {
   uint8_t idle_lock_qr      = 0;   // 1 = Lock Idle on PromptPay QR code
   uint8_t eco_video_enabled = 0;   // 1 = Allow Video playback in Eco Mode, 0 = Skip Video in Eco Mode
   uint8_t led_enabled       = 1;
+  uint32_t game_enabled_mask = 0x0003FFFF; // Bits 0..17 enabled games
+  uint8_t  game_order[18] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17};
 
   // Night mode screen-off schedule
   uint8_t night_mode_enabled = 0;
@@ -182,6 +184,23 @@ public:
       data.idle_lock_qr      = 0;
       data.eco_video_enabled = prefs.getUChar("ecovid", 0);
       data.led_enabled       = prefs.getUChar("led", 1);
+      data.game_enabled_mask = prefs.getULong("g_mask32", 0x0003FFFF) & 0x0003FFFF;
+      if (data.game_enabled_mask == 0) data.game_enabled_mask = 0x0003FFFF;
+      bool validOrd = (prefs.getBytesLength("g_ord18") == 18);
+      if (validOrd) {
+        prefs.getBytes("g_ord18", data.game_order, 18);
+        uint32_t seen = 0;
+        for (int i = 0; i < 18; ++i) {
+          if (data.game_order[i] >= 18 || (seen & (1UL << data.game_order[i]))) {
+            validOrd = false;
+            break;
+          }
+          seen |= (1UL << data.game_order[i]);
+        }
+      }
+      if (!validOrd) {
+        for (int i = 0; i < 18; ++i) data.game_order[i] = i;
+      }
       data.night_mode_enabled= prefs.getUChar("night_en", 0);
       data.night_start_hour  = prefs.getUChar("night_st", 23);
       data.night_end_hour    = prefs.getUChar("night_ed", 6);
@@ -253,6 +272,9 @@ public:
       prefs.putUChar("lockqr", data.idle_lock_qr);
       prefs.putUChar("ecovid", data.eco_video_enabled);
       prefs.putUChar("led", data.led_enabled);
+      if ((data.game_enabled_mask & 0x0003FFFF) == 0) data.game_enabled_mask = 1;
+      prefs.putULong("g_mask32", data.game_enabled_mask & 0x0003FFFF);
+      prefs.putBytes("g_ord18", data.game_order, 18);
       prefs.putUChar("night_en", data.night_mode_enabled);
       prefs.putUChar("night_st", data.night_start_hour);
       prefs.putUChar("night_ed", data.night_end_hour);

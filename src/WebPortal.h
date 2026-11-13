@@ -12,6 +12,7 @@
 #include "PowerManager.h"
 #include "DisplayCanvas.h"
 #include "IdleScene.h"
+#include "GameRegistry.h"
 #include "PromptPayQrAsset.h"
 #include "OtaUpdater.h"
 
@@ -26,8 +27,9 @@ private:
   uint8_t        _uploadVidFormat = 0; // 0 = HD 16-bit RGB565 (default), 1 = Compact 8-bit RGB332
   bool           _requestEnterIdle = false;
 
-  DisplayCanvas* _display = nullptr;
-  IdleScene*     _idle    = nullptr;
+  DisplayCanvas* _display  = nullptr;
+  IdleScene*     _idle     = nullptr;
+  GameRegistry*  _registry = nullptr;
 
   static inline uint16_t expandRgb332(uint8_t c) {
     uint8_t r3 = (c >> 5) & 0x07;
@@ -112,17 +114,18 @@ public:
     return false;
   }
 
-  void begin(DisplayCanvas* display, IdleScene* idle) {
-    _display = display;
-    _idle    = idle;
+  void begin(DisplayCanvas* display, IdleScene* idle, GameRegistry* registry = nullptr) {
+    _display  = display;
+    _idle     = idle;
+    _registry = registry;
 
     LittleFS.begin(true);
     if (!LittleFS.exists("/photos")) LittleFS.mkdir("/photos");
     if (!LittleFS.exists("/videos")) LittleFS.mkdir("/videos");
 
     // 1. Main Web Portal UI + OS Captive Portal Auto-Popup Endpoints
-    static const char* headerKeys[] = {"If-None-Match"};
-    _server.collectHeaders(headerKeys, 1);
+    static const char* headerKeys[] = {"If-None-Match", "Range"};
+    _server.collectHeaders(headerKeys, 2);
     _server.on("/", HTTP_GET, [this]() {
       gPower.notifyWebActivity();
       _server.sendHeader("Cache-Control", "public, max-age=3600, must-revalidate");
@@ -299,9 +302,83 @@ public:
       bool first = true;
       appendFolderJson(json, "/photos", first);
       appendFolderJson(json, "/videos", first);
+      json += "],\"games\":[";
+      if (_registry) {
+        uint32_t gmask = gSettings.data.game_enabled_mask & ((1UL << TOTAL_GAMES) - 1);
+        for (int i = 0; i < TOTAL_GAMES; ++i) {
+          uint8_t rawIdx = gSettings.data.game_order[i];
+          if (rawIdx >= TOTAL_GAMES) rawIdx = i;
+          IGame* gm = _registry->getGame(rawIdx);
+          if (i > 0) json += ",";
+          json += "{\"id\":" + String(rawIdx) + ","
+                  "\"title\":\"" + String(gm->title()) + "\","
+                  "\"enabled\":" + String((gmask & (1UL << rawIdx)) ? "true" : "false") + ","
+                  "\"score\":" + String(HighScoreStore::getHighScore(gm->id())) + "}";
+        }
+      }
       json += "]}";
 
       _server.send(200, "application/json", json);
+    });
+
+    // 6b. Stream raw LittleFS photo/video file for Web Media Gallery Preview (supports HTTP Range!)
+    _server.on("/api/media_file", HTTP_GET, [this]() {
+      gPower.notifyWebActivity();
+      if (!_server.hasArg("path")) { _server.send(400, "text/plain", "Missing path"); return; }
+      String path = _server.arg("path");
+      if ((!path.startsWith("/photos/") && !path.startsWith("/videos/")) || path.indexOf("..") >= 0) {
+        _server.send(403, "text/plain", "Forbidden");
+        return;
+      }
+      File f = LittleFS.open(path, "r");
+      if (!f || f.isDirectory()) {
+        if (f) f.close();
+        _server.send(404, "text/plain", "Not found");
+        return;
+      }
+      size_t totalSize = f.size();
+      _server.sendHeader("Cache-Control", "public, max-age=86400");
+      _server.sendHeader("Accept-Ranges", "bytes");
+
+      if (_server.hasHeader("Range")) {
+        String rng = _server.header("Range");
+        if (rng.startsWith("bytes=")) {
+          rng = rng.substring(6);
+          int dash = rng.indexOf('-');
+          size_t startPos = (size_t)rng.substring(0, dash).toInt();
+          size_t endPos = (dash >= 0 && dash + 1 < (int)rng.length())
+                            ? (size_t)rng.substring(dash + 1).toInt()
+                            : (totalSize > 0 ? totalSize - 1 : 0);
+          if (totalSize == 0 || startPos >= totalSize) {
+            f.close();
+            _server.send(416, "text/plain", "Range Not Satisfiable");
+            return;
+          }
+          if (endPos >= totalSize) endPos = totalSize - 1;
+          size_t sendLen = endPos - startPos + 1;
+          f.seek(startPos, SeekSet);
+          char crBuf[48];
+          snprintf(crBuf, sizeof(crBuf), "bytes %u-%u/%u", (unsigned)startPos, (unsigned)endPos, (unsigned)totalSize);
+          _server.sendHeader("Content-Range", crBuf);
+          _server.setContentLength(sendLen);
+          _server.send(206, "application/octet-stream", "");
+          WiFiClient client = _server.client();
+          uint8_t buf[512];
+          size_t rem = sendLen;
+          while (rem > 0 && f.available() && client.connected()) {
+            size_t toRead = (rem < sizeof(buf)) ? rem : sizeof(buf);
+            size_t rd = f.read(buf, toRead);
+            if (rd == 0) break;
+            client.write(buf, rd);
+            rem -= rd;
+          }
+          f.close();
+          return;
+        }
+      }
+
+      _server.streamFile(f, "application/octet-stream");
+      f.close();
     });
 
     // 7. Real-Time Live Frame Streaming to ESP32 Screen (/api/liveframe)
@@ -619,6 +696,30 @@ public:
       }
       if (_server.hasArg("ecovid")) {
         gSettings.data.eco_video_enabled = (_server.arg("ecovid").toInt() != 0) ? 1 : 0;
+      }
+      if (_server.hasArg("gmask")) {
+        uint32_t gm = strtoul(_server.arg("gmask").c_str(), nullptr, 10) & ((1UL << TOTAL_GAMES) - 1);
+        if (gm != 0) gSettings.data.game_enabled_mask = gm;
+      }
+      if (_server.hasArg("gorder")) {
+        String ordStr = _server.arg("gorder");
+        uint8_t tmpOrd[TOTAL_GAMES];
+        int idx = 0, pos = 0;
+        uint32_t seen = 0;
+        while (idx < TOTAL_GAMES && pos <= (int)ordStr.length()) {
+          int comma = ordStr.indexOf(',', pos);
+          String tok = (comma < 0) ? ordStr.substring(pos) : ordStr.substring(pos, comma);
+          int val = tok.toInt();
+          if (tok.length() > 0 && val >= 0 && val < TOTAL_GAMES && !(seen & (1UL << val))) {
+            tmpOrd[idx++] = (uint8_t)val;
+            seen |= (1UL << val);
+          }
+          if (comma < 0) break;
+          pos = comma + 1;
+        }
+        if (idx == TOTAL_GAMES) {
+          memcpy(gSettings.data.game_order, tmpOrd, TOTAL_GAMES);
+        }
       }
       gSettings.data.idle_lock_qr = 0;
       gSettings.save();

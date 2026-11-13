@@ -94,11 +94,13 @@ public:
     if (code != HTTP_CODE_OK) {
       info.error = "GitHub HTTP " + String(code);
       http.end();
+    digitalWrite(PIN_STATUS_LED, LOW);
       return info;
     }
 
     String payload = http.getString();
     http.end();
+    digitalWrite(PIN_STATUS_LED, LOW);
 
     String tag = extractJsonString(payload, "tag_name");
     if (tag.length() == 0) {
@@ -189,6 +191,7 @@ public:
     if (code != HTTP_CODE_OK) {
       errOut = "Download HTTP " + String(code);
       http.end();
+    digitalWrite(PIN_STATUS_LED, LOW);
       return false;
     }
 
@@ -196,6 +199,7 @@ public:
     if (!Update.begin(contentLen > 0 ? (size_t)contentLen : UPDATE_SIZE_UNKNOWN)) {
       errOut = "Update.begin failed";
       http.end();
+    digitalWrite(PIN_STATUS_LED, LOW);
       return false;
     }
 
@@ -215,6 +219,7 @@ public:
             errOut = "Flash write error";
             Update.abort();
             http.end();
+    digitalWrite(PIN_STATUS_LED, LOW);
             return false;
           }
           written += rd;
@@ -222,6 +227,9 @@ public:
 
           if (gfx && (millis() - lastDrawMs >= 200 || (contentLen > 0 && written >= (size_t)contentLen))) {
             lastDrawMs = millis();
+            if (gSettings.data.led_enabled) {
+              digitalWrite(PIN_STATUS_LED, ((millis() / 200) & 1) ? HIGH : LOW);
+            }
             int pct = (contentLen > 0) ? (int)((written * 100ULL) / (size_t)contentLen) : 50;
             drawScreenProgress(*gfx, "Updating Firmware", "Do NOT power off!",
                                pct, written / 1024, (contentLen > 0) ? (contentLen / 1024) : 0, Color565::Green);
@@ -232,6 +240,7 @@ public:
           errOut = "Download timeout";
           Update.abort();
           http.end();
+    digitalWrite(PIN_STATUS_LED, LOW);
           return false;
         }
         delay(2);
@@ -239,6 +248,7 @@ public:
     }
 
     http.end();
+    digitalWrite(PIN_STATUS_LED, LOW);
 
     if (!Update.end(true)) {
       errOut = "Update.end err " + String(Update.getError());

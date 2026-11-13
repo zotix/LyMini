@@ -31,16 +31,41 @@ private:
     return (r5 << 11) | (g6 << 5) | b5;
   }
 
+  int8_t getActiveGameCount() const {
+    int8_t cnt = 0;
+    uint32_t mask = gSettings.data.game_enabled_mask & ((1UL << TOTAL_GAMES) - 1);
+    if (mask == 0) return 1;
+    for (int i = 0; i < TOTAL_GAMES; ++i) {
+      uint8_t g = gSettings.data.game_order[i];
+      if (g < TOTAL_GAMES && (mask & (1UL << g))) cnt++;
+    }
+    return (cnt > 0) ? cnt : 1;
+  }
+
+  uint8_t getRawGameIndex(int8_t slot) const {
+    uint32_t mask = gSettings.data.game_enabled_mask & ((1UL << TOTAL_GAMES) - 1);
+    if (mask == 0) return 0;
+    int8_t seen = 0;
+    for (int i = 0; i < TOTAL_GAMES; ++i) {
+      uint8_t g = gSettings.data.game_order[i];
+      if (g < TOTAL_GAMES && (mask & (1UL << g))) {
+        if (seen == slot) return g;
+        seen++;
+      }
+    }
+    return 0;
+  }
+
   int8_t getTotalItems() const {
-    return _registry.getCount() + 2; // 9 Games + 1 Brightness Settings Card + 1 About/Support Card = 11 items
+    return getActiveGameCount() + 2; // Active Games + Brightness Card + About/Support Card
   }
 
   inline bool isBriCard(int8_t idx) const {
-    return (idx == _registry.getCount());
+    return (idx == getActiveGameCount());
   }
 
   inline bool isAboutCard(int8_t idx) const {
-    return (idx == _registry.getCount() + 1);
+    return (idx == getActiveGameCount() + 1);
   }
 
   void drawStatusBar(DisplayCanvas& gfx) {
@@ -230,6 +255,75 @@ private:
         gfx.drawPixel(x + 54, y + 8, Color565::Yellow);
         break;
       }
+      case 9: { // 9: Flappy Bird
+        gfx.fillRect(x + 52, y + 4, 12, 13, Color565::Green);
+        gfx.fillRect(x + 52, y + 27, 12, 11, Color565::Green);
+        gfx.fillCircle(x + 28, y + 21, 7, Color565::Gold);
+        gfx.fillCircle(x + 31, y + 19, 2, Color565::Black);
+        gfx.fillTriangle(x + 35, y + 20, x + 41, y + 22, x + 35, y + 24, Color565::Orange);
+        break;
+      }
+      case 10: { // 10: 2048 Puzzle
+        gfx.fillRoundRect(x + 14, y + 6, 26, 14, 2, Color565::Orange);
+        gfx.fillRoundRect(x + 44, y + 6, 26, 14, 2, Color565::Crimson);
+        gfx.fillRoundRect(x + 14, y + 22, 26, 14, 2, Color565::Gold);
+        gfx.fillRoundRect(x + 44, y + 22, 26, 14, 2, Color565::Lime);
+        gfx.drawText(x + 21, y + 25, "2048", Color565::Black);
+        break;
+      }
+      case 11: { // 11: Space Invaders
+        for (int c = 0; c < 3; ++c) {
+          gfx.fillRect(x + 18 + c * 20, y + 8, 10, 7, Color565::Magenta);
+        }
+        gfx.fillRect(x + 37, y + 30, 12, 6, Color565::Lime);
+        gfx.fillRect(x + 41, y + 26, 4, 4, Color565::Lime);
+        gfx.fillRect(x + 42, y + 18, 2, 6, Color565::Gold);
+        break;
+      }
+      case 12: { // 12: Pac-Mini
+        gfx.fillCircle(x + 28, y + 21, 10, Color565::Yellow);
+        gfx.fillTriangle(x + 28, y + 21, x + 40, y + 14, x + 40, y + 28, Color565::rgb(12, 18, 32));
+        gfx.fillCircle(x + 46, y + 21, 2, Color565::White);
+        gfx.fillCircle(x + 56, y + 21, 2, Color565::White);
+        gfx.fillCircle(x + 68, y + 21, 6, Color565::Red);
+        break;
+      }
+      case 13: { // 13: Simon Says
+        gfx.fillRoundRect(x + 10, y + 10, 20, 22, 3, Color565::Red);
+        gfx.fillRoundRect(x + 33, y + 10, 20, 22, 3, Color565::Gold);
+        gfx.fillRoundRect(x + 56, y + 10, 20, 22, 3, Color565::NeonCyan);
+        break;
+      }
+      case 14: { // 14: Whack-A-Mole
+        gfx.fillRoundRect(x + 21, y + 26, 44, 12, 5, Color565::Orange);
+        gfx.fillRoundRect(x + 31, y + 10, 24, 22, 8, Color565::rgb(170, 110, 60));
+        gfx.fillCircle(x + 38, y + 18, 2, Color565::Black);
+        gfx.fillCircle(x + 48, y + 18, 2, Color565::Black);
+        break;
+      }
+      case 15: { // 15: Tower Stack
+        gfx.fillRect(x + 18, y + 28, 50, 7, Color565::NeonCyan);
+        gfx.fillRect(x + 24, y + 20, 38, 7, Color565::Lime);
+        gfx.fillRect(x + 30, y + 12, 26, 7, Color565::Gold);
+        break;
+      }
+      case 16: { // 16: Frogger
+        gfx.fillRect(x + 4, y + 8, 78, 12, Color565::DeepBlue);
+        gfx.fillRoundRect(x + 16, y + 11, 26, 6, 2, Color565::Orange);
+        gfx.fillRect(x + 4, y + 24, 78, 12, Color565::GrayDark);
+        gfx.fillCircle(x + 43, y + 28, 5, Color565::Lime);
+        break;
+      }
+      case 17: { // 17: Minesweeper
+        for (int r = 0; r < 2; ++r)
+          for (int c = 0; c < 3; ++c)
+            gfx.fillRect(x + 18 + c * 17, y + 8 + r * 14, 15, 12, Color565::GrayMid);
+        gfx.fillRect(x + 35, y + 8, 15, 12, Color565::Navy);
+        gfx.drawText(x + 40, y + 10, "F", Color565::Gold);
+        gfx.fillRect(x + 52, y + 22, 15, 12, Color565::Crimson);
+        gfx.drawText(x + 57, y + 24, "*", Color565::White);
+        break;
+      }
     }
   }
 
@@ -371,7 +465,7 @@ public:
         _viewingSupport = true;
         return LAUNCH_NONE;
       }
-      return _selectedIndex;
+      return (int8_t)getRawGameIndex(_selectedIndex);
     }
 
     return LAUNCH_NONE;
@@ -387,11 +481,16 @@ public:
 
     drawStatusBar(gfx);
 
+    int8_t total = getTotalItems();
+    if (_selectedIndex >= total) _selectedIndex = total - 1;
+    if (_selectedIndex < 0) _selectedIndex = 0;
+
     int16_t cardX = 14 + (int16_t)_animOffset;
     int16_t cardY = 20;
     bool isBri = isBriCard(_selectedIndex);
     bool isAbt = isAboutCard(_selectedIndex);
-    uint16_t borderCol = isBri ? Color565::Gold : (isAbt ? Color565::Magenta : _registry.getGame(_selectedIndex)->themeColor());
+    uint8_t rawIdx = (isBri || isAbt) ? 0 : getRawGameIndex(_selectedIndex);
+    uint16_t borderCol = isBri ? Color565::Gold : (isAbt ? Color565::Magenta : _registry.getGame(rawIdx)->themeColor());
 
     gfx.fillRoundRect(cardX, cardY, 100, 80, 6, Color565::rgb(25, 30, 50));
     gfx.drawRoundRect(cardX, cardY, 100, 80, 6, borderCol);
@@ -409,12 +508,12 @@ public:
       drawAboutCardArt(gfx, cardX + 7, cardY + 18);
       gfx.drawCenteredText(cardY + 65, "PRESS OK: DONATE QR", Color565::Gold);
     } else {
-      IGame* curGame = _registry.getGame(_selectedIndex);
+      IGame* curGame = _registry.getGame(rawIdx);
       // Game Title at Top of Card
       gfx.drawCenteredText(cardY + 6, curGame->title(), Color565::White);
 
       // Visual Game Cover Art (Replaces text description!)
-      drawGameCoverArt(gfx, _selectedIndex, cardX + 7, cardY + 18);
+      drawGameCoverArt(gfx, rawIdx, cardX + 7, cardY + 18);
 
       // High Score Badge at Bottom of Card
       uint32_t hs = HighScoreStore::getHighScore(curGame->id());
@@ -423,16 +522,27 @@ public:
       gfx.drawCenteredText(cardY + 65, hsBuf, Color565::Gold);
     }
 
-    // Page Indicator Dots (11 items)
-    int8_t total = getTotalItems();
-    int16_t dotsStartX = (SCREEN_WIDTH - (total * 7)) / 2;
-    for (int8_t i = 0; i < total; ++i) {
-      if (i == _selectedIndex) {
-        uint16_t dotCol = isBriCard(i) ? Color565::Gold : (isAboutCard(i) ? Color565::Magenta : Color565::NeonCyan);
-        gfx.fillCircle(dotsStartX + i * 7 + 3, 106, 2, dotCol);
-      } else {
-        gfx.drawPixel(dotsStartX + i * 7 + 3, 106, Color565::GrayMid);
+    // Page Indicator Dots (or compact bar when > 14 items)
+    if (total <= 14) {
+      int16_t dotsStartX = (SCREEN_WIDTH - (total * 7)) / 2;
+      for (int8_t i = 0; i < total; ++i) {
+        if (i == _selectedIndex) {
+          uint16_t dotCol = isBriCard(i) ? Color565::Gold : (isAboutCard(i) ? Color565::Magenta : Color565::NeonCyan);
+          gfx.fillCircle(dotsStartX + i * 7 + 3, 106, 2, dotCol);
+        } else {
+          gfx.drawPixel(dotsStartX + i * 7 + 3, 106, Color565::GrayMid);
+        }
       }
+    } else {
+      char pBuf[12];
+      snprintf(pBuf, sizeof(pBuf), "%d/%d", _selectedIndex + 1, total);
+      gfx.drawText(6, 102, pBuf, Color565::GrayLight);
+      int16_t barX = 44, barW = 76;
+      gfx.drawRect(barX, 104, barW, 5, Color565::GrayMid);
+      int16_t thumbW = max((int16_t)6, (int16_t)(barW / total));
+      int16_t thumbX = barX + ((barW - thumbW) * _selectedIndex) / max(1, total - 1);
+      uint16_t thumbCol = isBri ? Color565::Gold : (isAbt ? Color565::Magenta : Color565::NeonCyan);
+      gfx.fillRect(thumbX, 105, thumbW, 3, thumbCol);
     }
 
     // Bottom Action Hint / Hold Progress Bar

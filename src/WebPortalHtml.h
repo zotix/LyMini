@@ -96,6 +96,12 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 950; white-space: nowrap;
   }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .media-thumb { width: 48px; height: 48px; border-radius: 6px; border: 1px solid var(--border); background: #000; image-rendering: pixelated; cursor: pointer; flex-shrink: 0; }
+  .fs-bar { width: 100%; height: 6px; background: #090d14; border-radius: 999px; overflow: hidden; border: 1px solid var(--border); margin-top: 8px; }
+  .fs-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--green)); transition: width 0.3s; }
+  details.card summary { cursor: pointer; font-size: 15px; font-weight: 700; color: var(--accent); list-style: none; display: flex; align-items: center; justify-content: space-between; }
+  details.card summary::-webkit-details-marker { display: none; }
+  .game-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; background: #0b0f17; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--border); font-size: 13px; }
   @media (max-width: 640px) {
     body { padding-bottom: calc(82px + env(safe-area-inset-bottom)); }
     .topbar { padding: 10px; gap: 6px; }
@@ -132,6 +138,17 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
   </div>
 </div>
 <div id="autoSaveToast" class="toast">✅ บันทึกอัตโนมัติแล้ว</div>
+<div id="mediaModal" class="modal-overlay" onclick="if(event.target===this)closeMediaPreview()">
+  <div class="modal-card">
+    <div id="mediaModalTitle" style="font-size:14px; font-weight:700; color:#fff; margin-bottom:10px; word-break:break-all;">Preview</div>
+    <canvas id="mediaModalCv" width="128" height="128" style="width:224px; height:224px; border:2px solid var(--accent); border-radius:8px; background:#000; image-rendering:pixelated; display:block; margin:0 auto;"></canvas>
+    <div id="mediaModalInfo" class="hint" style="margin-top:8px;">Loading...</div>
+    <div class="row" style="margin-top:12px;">
+      <button type="button" class="purple" id="btnModalShowEsp">👁️ จอ LyMini</button>
+      <button type="button" class="red" onclick="closeMediaPreview()">✖️ ปิด</button>
+    </div>
+  </div>
+</div>
 <div class="container">
   <div class="topbar">
     <div>
@@ -291,9 +308,22 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
         <h2 style="margin:0;" data-i18n="gal_title">📂 คลังภาพและวิดีโอในบอร์ด (LittleFS)</h2>
         <span id="fsInfo" class="badge">-- KB</span>
       </div>
-      <p class="hint" data-i18n="gal_hint">ติ๊กถูกเพื่อเปิดแสดงในรอบ Idle หรือกด 👁️ เพื่อยิงขึ้นจอ LyMini ทันที</p>
+      <div class="fs-bar"><div id="fsFill" class="fs-fill"></div></div>
+      <p class="hint" data-i18n="gal_hint">ติ๊กถูกเพื่อเปิดแสดงในรอบ Idle แตะรูปเพื่อดูตัวอย่าง หรือกด 👁️ เพื่อยิงขึ้นจอ LyMini ทันที</p>
       <div id="mediaList" class="media-list">Loading...</div>
     </div>
+
+    <details class="card">
+      <summary>
+        <span data-i18n="gm_title">🎮 เลือกแสดงเกมส์ &amp; จัดลำดับบนหน้าหลัก</span>
+        <span class="badge" id="gameCountBadge">18</span>
+      </summary>
+      <p class="hint" style="margin-top:6px;" data-i18n="gm_hint">ติ๊กเปิด/ปิดเกมส์ที่ต้องการแสดง และกด ⬆️/⬇️ เพื่อจัดลำดับ (บันทึกอัตโนมัติ)</p>
+      <div class="row" style="margin-bottom:8px;">
+        <button type="button" class="sm" style="background:#1e293b; color:#fff; border:1px solid var(--border);" onclick="resetGames()" data-i18n="gm_reset">↺ รีเซ็ตลำดับเดิม</button>
+      </div>
+      <div id="gameList" class="media-list">Loading...</div>
+    </details>
   </div>
 
   <!-- TAB 2: Dedicated Auto-Update Max Brightness + Display Rotation + Night Schedule -->
@@ -513,7 +543,10 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       sleep_timeout: 'เข้าสู่ Sleep Mode ปิดจอ/พักเครื่อง (นาที, 0=ปิด):',
       id_cycle: 'สลับหน้าทุกๆ (วินาที):',
       gal_title: '📂 คลังภาพและวิดีโอในบอร์ด (LittleFS)',
-      gal_hint: 'ติ๊กถูกเพื่อเปิดแสดงในรอบ Idle หรือกด 👁️ เพื่อยิงขึ้นจอ LyMini ทันที',
+      gal_hint: 'ติ๊กถูกเพื่อเปิดแสดงในรอบ Idle แตะรูปเพื่อดูตัวอย่าง หรือกด 👁️ เพื่อยิงขึ้นจอ LyMini ทันที',
+      gm_title: '🎮 เลือกแสดงเกมส์ & จัดลำดับบนหน้าหลัก',
+      gm_hint: 'ติ๊กเปิด/ปิดเกมส์ที่ต้องการแสดง และกด ⬆️/⬇️ เพื่อจัดลำดับ (บันทึกอัตโนมัติ)',
+      gm_reset: '↺ รีเซ็ตลำดับเดิม',
       br_title: '🔆 ความสว่างสูงสุด (Max Brightness — Auto Update)',
       br_desc: 'เลื่อนแถบเพื่อปรับความสว่างหน้าจอแบบเรียลไทม์ทันที (และเป็นเพดานความสว่างสูงสุดที่หน้าจอจะไม่สว่างเกินค่านี้)',
       ec_title: '🔋 ความสว่างช่วงประหยัดพลังงาน / พักหน้าจอ (Eco Brightness)',
@@ -582,7 +615,10 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       sleep_timeout: 'Enter Sleep Mode Screen-Off (minutes, 0=off):',
       id_cycle: 'Cycle screen every (sec):',
       gal_title: '📂 On-Board Media Gallery (LittleFS)',
-      gal_hint: 'Check to enable in Idle rotation, or click 👁️ to display immediately on LyMini',
+      gal_hint: 'Check to enable in Idle rotation, tap thumbnail to preview, or click 👁️ to show on LyMini',
+      gm_title: '🎮 Show & Reorder Games on Launcher',
+      gm_hint: 'Toggle visible games and use ⬆️/⬇️ to reorder (auto-saved)',
+      gm_reset: '↺ Reset Default Order',
       br_title: '🔆 Max Brightness Ceiling (Auto Update)',
       br_desc: 'Slide to adjust screen brightness in real-time (sets the maximum brightness limit the screen will never exceed).',
       ec_title: '🔋 Eco / Idle Power-Saving Brightness (Auto Update)',
@@ -1318,6 +1354,9 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       document.getElementById('battBadge').innerText = (st.usb ? '⚡ USB ' : '🔋 ') + st.batt + '%';
       document.getElementById('statusText').innerHTML = `IP: <b>${st.ip}</b> | <b>http://lymini.local</b>`;
       document.getElementById('fsInfo').innerText = `${st.fsUsedKB} / ${st.fsTotalKB} KB`;
+      const fsPct = st.fsTotalKB > 0 ? Math.min(100, Math.round((st.fsUsedKB * 100) / st.fsTotalKB)) : 0;
+      const fsFill = document.getElementById('fsFill');
+      if (fsFill) fsFill.style.width = fsPct + '%';
 
       document.getElementById('chkClock').checked      = (st.idleMask & 1) !== 0;
       document.getElementById('chkWeather').checked    = (st.idleMask & 2) !== 0;
@@ -1393,20 +1432,211 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 
       const mBox = document.getElementById('mediaList');
       mBox.innerHTML = '';
+      const thumbJobs = [];
       (st.media || []).forEach(item => {
         const row = document.createElement('div');
         row.className = 'media-row';
-        const icon = item.path.endsWith('.mvid') ? '🎬' : '🖼️';
-        row.innerHTML = `
-          <input type="checkbox" ${item.enabled ? 'checked' : ''} onchange="toggleMedia('${item.name}', this.checked)" />
-          <span class="media-name">${icon} ${item.name} <small style="color:#64748b">(${item.kb}KB)</small></span>
-          <button class="sm purple" onclick="showOnEsp('${item.path}')">👁️</button>
-          <button class="sm red" onclick="deleteMedia('${item.path}')">🗑️</button>
-        `;
+        const isVid = item.path.endsWith('.mvid');
+        const icon = isVid ? '🎬' : '🖼️';
+        const cv = document.createElement('canvas');
+        cv.width = 128; cv.height = 128; cv.className = 'media-thumb';
+        cv.title = 'Preview';
+        cv.onclick = () => openMediaPreview(item.path, item.name);
+
+        const chk = document.createElement('input');
+        chk.type = 'checkbox'; chk.checked = !!item.enabled;
+        chk.style.cssText = 'width:20px;height:20px;flex-shrink:0;';
+        chk.onchange = () => toggleMedia(item.name, chk.checked);
+
+        const lbl = document.createElement('span');
+        lbl.className = 'media-name';
+        lbl.innerHTML = `${icon} ${item.name} <small style="color:#64748b">(${item.kb}KB)</small>`;
+
+        const btnPlay = document.createElement('button');
+        btnPlay.className = 'sm';
+        btnPlay.style.cssText = 'background:#1e293b;color:#fff;border:1px solid var(--border);';
+        btnPlay.innerText = isVid ? '▶️' : '🔍';
+        btnPlay.onclick = () => openMediaPreview(item.path, item.name);
+
+        const btnShow = document.createElement('button');
+        btnShow.className = 'sm purple';
+        btnShow.innerText = '👁️';
+        btnShow.onclick = () => showOnEsp(item.path);
+
+        const btnDel = document.createElement('button');
+        btnDel.className = 'sm red';
+        btnDel.innerText = '🗑️';
+        btnDel.onclick = () => deleteMedia(item.path);
+
+        row.append(chk, cv, lbl, btnPlay, btnShow, btnDel);
         mBox.appendChild(row);
+        thumbJobs.push({ path: item.path, cv, isVid });
       });
+      enqueueThumbs(thumbJobs);
+
+      if (st.games) {
+        gamesState = st.games;
+        renderGameList();
+      }
     } catch (e) {}
   }
+
+  let gamesState = [];
+  function renderGameList() {
+    const gBox = document.getElementById('gameList');
+    if (!gBox) return;
+    const enCount = gamesState.filter(g => g.enabled).length;
+    const badge = document.getElementById('gameCountBadge');
+    if (badge) badge.innerText = `${enCount}/${gamesState.length}`;
+    gBox.innerHTML = '';
+    gamesState.forEach((g, idx) => {
+      const row = document.createElement('div');
+      row.className = 'game-row';
+      row.innerHTML = `
+        <label class="chk-left" style="margin:0;cursor:pointer;">
+          <input type="checkbox" ${g.enabled ? 'checked' : ''} onchange="toggleGame(${idx}, this.checked)" />
+          <span><b>${idx + 1}.</b> ${g.title} <small style="color:var(--gold)">★${g.score}</small></span>
+        </label>
+        <div style="display:flex;gap:4px;">
+          <button type="button" class="sm" style="background:#1e293b;color:#fff;" onclick="moveGame(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>⬆️</button>
+          <button type="button" class="sm" style="background:#1e293b;color:#fff;" onclick="moveGame(${idx}, 1)" ${idx === gamesState.length - 1 ? 'disabled' : ''}>⬇️</button>
+        </div>
+      `;
+      gBox.appendChild(row);
+    });
+  }
+
+  async function saveGamesAuto() {
+    let gmask = 0;
+    gamesState.forEach(g => { if (g.enabled) gmask |= (1 << g.id); });
+    if (gmask === 0 && gamesState.length > 0) {
+      gamesState[0].enabled = true;
+      gmask = (1 << gamesState[0].id);
+      renderGameList();
+    }
+    const gorder = gamesState.map(g => g.id).join(',');
+    showToast(curLang === 'th' ? '⏳ กำลังบันทึก...' : '⏳ Saving...');
+    try {
+      await fetch(`/api/settings?gmask=${gmask >>> 0}&gorder=${encodeURIComponent(gorder)}`, { method: 'POST' });
+      showToast(curLang === 'th' ? '✅ บันทึกอัตโนมัติแล้ว' : '✅ Auto-saved');
+    } catch (e) {
+      showToast(curLang === 'th' ? '❌ บันทึกไม่สำเร็จ' : '❌ Save failed');
+    }
+  }
+
+  window.toggleGame = (idx, en) => {
+    if (!en && gamesState.filter(g => g.enabled).length <= 1) {
+      renderGameList();
+      return;
+    }
+    gamesState[idx].enabled = en;
+    renderGameList();
+    saveGamesAuto();
+  };
+  window.moveGame = (idx, dir) => {
+    const ni = idx + dir;
+    if (ni < 0 || ni >= gamesState.length) return;
+    const tmp = gamesState[idx];
+    gamesState[idx] = gamesState[ni];
+    gamesState[ni] = tmp;
+    renderGameList();
+    saveGamesAuto();
+  };
+  window.resetGames = () => {
+    gamesState.sort((a, b) => a.id - b.id);
+    gamesState.forEach(g => g.enabled = true);
+    renderGameList();
+    saveGamesAuto();
+  };
+
+  const thumbCache = {};
+  let thumbRunId = 0;
+  function drawFrameToCanvas(cv, buf, offset, fmt) {
+    const ctx = cv.getContext('2d');
+    const img = ctx.createImageData(128, 128);
+    if (fmt === 1) {
+      for (let i = 0; i < 16384; i++) {
+        const c = buf[offset + i] || 0;
+        const r3 = (c >> 5) & 7, g3 = (c >> 2) & 7, b2 = c & 3;
+        img.data[i * 4]     = (r3 << 5) | (r3 << 2) | (r3 >> 1);
+        img.data[i * 4 + 1] = (g3 << 5) | (g3 << 2) | (g3 >> 1);
+        img.data[i * 4 + 2] = (b2 << 6) | (b2 << 4) | (b2 << 2) | b2;
+        img.data[i * 4 + 3] = 255;
+      }
+    } else {
+      for (let i = 0; i < 16384; i++) {
+        const p = ((buf[offset + i * 2] || 0) << 8) | (buf[offset + i * 2 + 1] || 0);
+        const r5 = (p >> 11) & 31, g6 = (p >> 5) & 63, b5 = p & 31;
+        img.data[i * 4]     = (r5 << 3) | (r5 >> 2);
+        img.data[i * 4 + 1] = (g6 << 2) | (g6 >> 4);
+        img.data[i * 4 + 2] = (b5 << 3) | (b5 >> 2);
+        img.data[i * 4 + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  async function enqueueThumbs(jobs) {
+    const runId = ++thumbRunId;
+    for (const j of jobs) {
+      if (runId !== thumbRunId) return;
+      if (thumbCache[j.path]) {
+        j.cv.getContext('2d').putImageData(thumbCache[j.path], 0, 0);
+        continue;
+      }
+      try {
+        const opts = j.isVid ? { headers: { 'Range': 'bytes=0-32775' } } : {};
+        const r = await fetch('/api/media_file?path=' + encodeURIComponent(j.path), opts);
+        if (!r.ok) continue;
+        const u8 = new Uint8Array(await r.arrayBuffer());
+        if (j.isVid && u8.length >= 8 + 16384 && u8[0] === 77 && u8[1] === 86 && u8[2] === 49) {
+          drawFrameToCanvas(j.cv, u8, 8, u8[3]);
+        } else if (!j.isVid && u8.length >= 32768) {
+          drawFrameToCanvas(j.cv, u8, 0, 2);
+        }
+        thumbCache[j.path] = j.cv.getContext('2d').getImageData(0, 0, 128, 128);
+      } catch (e) {}
+    }
+  }
+
+  let modalAnimTimer = null;
+  window.openMediaPreview = async (path, name) => {
+    clearInterval(modalAnimTimer);
+    const modal = document.getElementById('mediaModal');
+    const cv = document.getElementById('mediaModalCv');
+    const info = document.getElementById('mediaModalInfo');
+    document.getElementById('mediaModalTitle').innerText = name;
+    document.getElementById('btnModalShowEsp').onclick = () => showOnEsp(path);
+    info.innerText = curLang === 'th' ? '⏳ กำลังโหลดตัวอย่าง...' : '⏳ Loading preview...';
+    modal.classList.add('show');
+    if (thumbCache[path]) cv.getContext('2d').putImageData(thumbCache[path], 0, 0);
+    try {
+      const r = await fetch('/api/media_file?path=' + encodeURIComponent(path));
+      const u8 = new Uint8Array(await r.arrayBuffer());
+      if (path.endsWith('.mvid') && u8.length >= 8 && u8[0] === 77 && u8[1] === 86 && u8[2] === 49) {
+        const fmt = u8[3], fps = Math.max(1, Math.min(30, u8[6] || 12)), frames = Math.max(1, u8[7] || 1);
+        const fBytes = (fmt === 1) ? 16384 : 32768;
+        let curF = 0;
+        info.innerText = `🎬 ${frames} frames @ ${fps} FPS (${fmt === 1 ? '8-bit' : '16-bit'})`;
+        const drawNext = () => {
+          const off = 8 + curF * fBytes;
+          if (off + fBytes <= u8.length) drawFrameToCanvas(cv, u8, off, fmt);
+          curF = (curF + 1) % frames;
+        };
+        drawNext();
+        if (frames > 1) modalAnimTimer = setInterval(drawNext, Math.round(1000 / fps));
+      } else if (u8.length >= 32768) {
+        drawFrameToCanvas(cv, u8, 0, 2);
+        info.innerText = '🖼️ 128×128 RGB565 Photo';
+      }
+    } catch (e) {
+      info.innerText = '❌ Preview failed';
+    }
+  };
+  window.closeMediaPreview = () => {
+    clearInterval(modalAnimTimer);
+    document.getElementById('mediaModal').classList.remove('show');
+  };
 
   window.showOnEsp = async (path) => {
     await fetch('/api/show?path=' + encodeURIComponent(path), { method: 'POST' });

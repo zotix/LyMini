@@ -84,7 +84,7 @@ void setup() {
   }
 
   // 7. Start Web Portal Server (routes ready whenever Wi-Fi is active)
-  gWebPortal.begin(&gDisplay, &gIdle);
+  gWebPortal.begin(&gDisplay, &gIdle, &gRegistry);
 
   gLastFrameTime = micros();
 }
@@ -271,6 +271,7 @@ void loop() {
         gpio_wakeup_enable((gpio_num_t)PIN_BTN_OK, GPIO_INTR_LOW_LEVEL);
         esp_sleep_enable_gpio_wakeup();
         esp_sleep_enable_timer_wakeup(250000ULL);
+        digitalWrite(PIN_STATUS_LED, LOW);
         esp_light_sleep_start();
       }
     } else {
