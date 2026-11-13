@@ -6,8 +6,16 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
 <html lang="th">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>LyMini Arcade & Smart TV v0.2.6</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="LyMini">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0f17">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<title>LyMini Arcade & Smart TV</title>
 <style>
   :root {
     --bg: #0b0f17;
@@ -21,8 +29,8 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     --purple: #a855f7;
     --gold: #facc15;
   }
-  * { box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 10px; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: max(10px, env(safe-area-inset-top)) 10px max(18px, env(safe-area-inset-bottom)) 10px; }
   .container { max-width: 720px; margin: 0 auto; }
   h1 { font-size: 18px; margin: 0 0 4px 0; color: #fff; }
   h2 { font-size: 15px; margin: 0 0 10px 0; color: var(--accent); }
@@ -81,6 +89,35 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
   @keyframes spin { to { transform: rotate(360deg); } }
   .prog-bg { width: 100%; height: 12px; background: #090d14; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); margin-top: 12px; }
   .prog-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--green)); transition: width 0.15s ease; }
+  .toast {
+    position: fixed; left: 50%; bottom: calc(82px + env(safe-area-inset-bottom)); transform: translate(-50%, 16px);
+    background: #0f172a; color: #fff; border: 1px solid var(--accent); border-radius: 999px;
+    padding: 8px 16px; font-size: 13px; font-weight: 700; box-shadow: 0 8px 24px rgba(0,0,0,0.55);
+    opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 950; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  @media (max-width: 640px) {
+    body { padding-bottom: calc(82px + env(safe-area-inset-bottom)); }
+    .topbar { padding: 10px; gap: 6px; }
+    .topbar h1 { font-size: 16px; }
+    .tabs {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 900; margin: 0;
+      padding: 6px 6px max(8px, env(safe-area-inset-bottom)) 6px;
+      background: rgba(11, 15, 23, 0.96); backdrop-filter: blur(10px);
+      border-top: 1px solid var(--border); gap: 4px; overflow: hidden;
+    }
+    .tab-btn {
+      min-height: 48px; padding: 6px 4px; font-size: 11px; line-height: 1.25;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      white-space: normal; text-align: center; border-radius: 10px;
+    }
+    input[type=text], input[type=password], input[type=number], select { font-size: 16px; min-height: 44px; }
+    button { min-height: 44px; }
+    button.sm { min-height: 34px; padding: 6px 10px; }
+    input[type=range] { height: 34px; }
+    canvas.preview-cv { width: 100%; max-width: 256px; height: auto; aspect-ratio: 1 / 1; }
+    .toast { bottom: calc(74px + env(safe-area-inset-bottom)); }
+  }
 </style>
 </head>
 <body>
@@ -94,10 +131,11 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     <div id="busyPct" style="font-size:13px; font-weight:700; color:var(--gold); margin-top:8px;">0%</div>
   </div>
 </div>
+<div id="autoSaveToast" class="toast">✅ บันทึกอัตโนมัติแล้ว</div>
 <div class="container">
   <div class="topbar">
     <div>
-      <h1>🕹️ LyMini <span class="badge">v0.2.6</span> <span id="connBadge" class="badge online">🟢 Online</span></h1>
+      <h1>🕹️ LyMini <span id="topFwVer" class="badge">v0.3.2</span> <span id="connBadge" class="badge online">🟢 Online</span></h1>
       <div class="hint" id="statusText">IP: <b>192.168.4.1</b> | <b>http://lymini.local</b></div>
     </div>
     <div style="display:flex; gap:6px; align-items:center;">
@@ -112,7 +150,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     <button type="button" class="tab-btn" onclick="switchTab(1)" data-i18n="tab_idle">2. 🎲 พักหน้าจอ & คลัง</button>
     <button type="button" class="tab-btn" onclick="switchTab(2)" data-i18n="tab_display">3. 🔆 ความสว่าง & จอ</button>
     <button type="button" class="tab-btn" onclick="switchTab(3)" data-i18n="tab_wifi">4. 📶 Wi-Fi & อากาศ</button>
-    <button type="button" class="tab-btn" onclick="switchTab(4)" data-i18n="tab_about">5. ☕ เกี่ยวกับ & กาแฟ</button>
+    <button type="button" class="tab-btn" onclick="switchTab(4)" data-i18n="tab_about">5. 🚀 OTA & เกี่ยวกับ</button>
   </div>
 
   <video id="srcVideo" playsinline webkit-playsinline muted loop preload="auto"></video>
@@ -239,7 +277,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
           <input type="number" id="inpSleepTime" min="0" max="720" step="any" value="45" />
         </div>
       </div>
-      <button type="button" class="green" onclick="saveAllSettings()" data-i18n="btn_save">💾 บันทึกการตั้งค่า</button>
+      <p class="hint" data-i18n="auto_save_hint">⚡ บันทึกการตั้งค่าอัตโนมัติทันทีเมื่อมีการเปลี่ยนแปลง</p>
     </div>
 
     <div class="card">
@@ -349,7 +387,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
         </div>
       </div>
 
-      <button type="button" class="green" onclick="saveAllSettings()" data-i18n="btn_save">💾 บันทึกการตั้งค่า</button>
+      <p class="hint" data-i18n="auto_save_hint">⚡ บันทึกการตั้งค่าอัตโนมัติทันทีเมื่อมีการเปลี่ยนแปลง</p>
     </div>
   </div>
 
@@ -385,7 +423,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
   <div class="tab-pane" id="tab4">
     <div class="card" style="text-align:center;">
       <h2 data-i18n="ab_title">☕ เกี่ยวกับ LyMini & เลี้ยงกาแฟผู้พัฒนา (PromptPay QR)</h2>
-      <p class="hint" data-i18n="ab_desc">LyMini ESP32-C3 1.44" Retro Arcade & Smart Idle TV v0.2.6 by Zotix</p>
+      <p class="hint" id="abDescText" data-i18n="ab_desc">LyMini ESP32-C3 1.44" Retro Arcade & Smart Idle TV v0.3.2 by Zotix</p>
 
       <div style="margin: 14px auto; display:inline-block; padding:12px; background:#fff; border-radius:12px;">
         <canvas id="qrCanvas" width="112" height="112" style="width:224px; height:224px; image-rendering:pixelated; display:block;"></canvas>
@@ -400,12 +438,12 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     <div class="card" style="border-color:var(--accent);">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <h2 style="margin:0;">🚀 อัปเดตเฟิร์มแวร์ (OTA Update)</h2>
-        <span id="curFwVer" class="badge">v0.3.0</span>
+        <span id="curFwVer" class="badge">v0.3.2</span>
       </div>
       <p class="hint">อัปเดตเกมใหม่หรือระบบผ่าน Wi-Fi โดยไม่ลบข้อมูลรูป/วิดีโอใน LittleFS และไม่ลบ High Score (หรือกดปุ่ม BOOT บนบอร์ดค้าง 10 วินาที)</p>
 
       <div style="margin-top:10px; padding:10px; background:rgba(0,0,0,0.2); border-radius:8px;">
-        <label style="margin-top:0;">🌐 Check &amp; Update Online (GitHub: zotix/Lymini)</label>
+        <label style="margin-top:0;">🌐 Check &amp; Update Online (GitHub: zotix/LyMini)</label>
         <input type="text" id="inpOtaUrl" placeholder="URL .bin (เว้นว่างเพื่อดึงจาก GitHub Release ล่าสุด)" />
         <div class="row" style="margin-top:8px;">
           <button type="button" id="btnCheckOta">🔍 Check Online</button>
@@ -436,7 +474,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       tab_idle: '2. 🎲 พักหน้าจอ & คลัง',
       tab_display: '3. 🔆 ความสว่าง & จอ',
       tab_wifi: '4. 📶 Wi-Fi & อากาศ',
-      tab_about: '5. ☕ เกี่ยวกับ & กาแฟ',
+      tab_about: '5. 🚀 OTA & เกี่ยวกับ',
       st_title: '✂️ 128×128 Media Studio (iOS / Android / PC + Live View)',
       st_desc: 'รองรับรูปภาพ (.JPG, .PNG, .WEBP, .HEIC) และวิดีโอจาก iPhone/มือถือ (.MOV, .MP4) ลากนิ้วเพื่อเลื่อนกรอบ หรือถ่าง 2 นิ้วเพื่อซูม',
       st_pan_hint: '💡 ลากบนกรอบภาพเพื่อจัดตำแหน่ง (Pan) / ถ่าง 2 นิ้วเพื่อซูม',
@@ -463,8 +501,8 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       id_qr: '☕ Buy Me a Coffee (PromptPay QR — เปิดแสดงเสมอ)',
       id_lock_qr: '🔒 ล็อกหน้าจอ Idle ให้แสดงเฉพาะ PromptPay QR Code ตลอดเวลา',
       id_random: '🔀 Random Mode (สุ่มลำดับหน้าจอ และสุ่มรูปภาพ/วิดีโอ)',
-      id_timeout: 'เข้าสู่ Idle Display (40MHz / แสง 50%) เมื่อไม่กดปุ่ม (วินาที):',
-      eco_timeout: 'เข้าสู่ Eco Display (20MHz / แสง 25%) เมื่อไม่กดปุ่ม (วินาที):',
+      id_timeout: 'เข้าสู่ Idle Display (40MHz / แสง Idle) เมื่อไม่กดปุ่ม (วินาที):',
+      eco_timeout: 'เข้าสู่ Eco Display (20MHz / แสง Eco) เมื่อไม่กดปุ่ม (วินาที):',
       sleep_timeout: 'เข้าสู่ Sleep Mode ปิดจอ/พักเครื่อง (นาที, 0=ปิด):',
       id_cycle: 'สลับหน้าทุกๆ (วินาที):',
       gal_title: '📂 คลังภาพและวิดีโอในบอร์ด (LittleFS)',
@@ -493,9 +531,10 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       wt_add: '➕ เพิ่มเมือง',
       wt_refresh: '🔄 อัปเดตสภาพอากาศทุกเมืองเดี๋ยวนี้',
       ab_title: '☕ เกี่ยวกับ LyMini & เลี้ยงกาแฟผู้พัฒนา (PromptPay QR)',
-      ab_desc: 'LyMini ESP32-C3 1.44" Retro Arcade & Smart Idle TV v0.2.6 by Zotix',
+      ab_desc: 'LyMini ESP32-C3 1.44" Retro Arcade & Smart Idle TV v0.3.2 by Zotix',
       ab_scan: '📱 สแกน PromptPay QR เพื่อสนับสนุนค่ากาแฟผู้พัฒนา (Zotix)',
       ab_show_esp: '👁️ แสดง QR Code บนจอ LyMini ทันที',
+      auto_save_hint: '⚡ บันทึกการตั้งค่าอัตโนมัติทันทีเมื่อมีการเปลี่ยนแปลง',
       btn_save: '💾 บันทึกการตั้งค่า'
     },
     en: {
@@ -503,7 +542,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       tab_idle: '2. 🎲 Idle & Gallery',
       tab_display: '3. 🔆 Brightness & Display',
       tab_wifi: '4. 📶 Wi-Fi & Weather',
-      tab_about: '5. ☕ About & Coffee',
+      tab_about: '5. 🚀 OTA & About',
       st_title: '✂️ 128×128 Media Studio (iOS / Android / PC + Live View)',
       st_desc: 'Supports photos (.JPG, .PNG, .WEBP, .HEIC) and mobile videos (.MOV, .MP4). Drag to pan or pinch to zoom.',
       st_pan_hint: '💡 Drag on canvas to pan / Pinch with 2 fingers to zoom',
@@ -530,8 +569,8 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       id_qr: '☕ Buy Me a Coffee (PromptPay QR — Always Active)',
       id_lock_qr: '🔒 Lock Idle Screen on PromptPay QR Code only',
       id_random: '🔀 Random Mode (Shuffle screens, photos & videos)',
-      id_timeout: 'Enter Idle Display (40MHz / 50% Bri) after inactivity (sec):',
-      eco_timeout: 'Enter Eco Display (20MHz / 25% Bri) after inactivity (sec):',
+      id_timeout: 'Enter Idle Display (40MHz / Idle Bri) after inactivity (sec):',
+      eco_timeout: 'Enter Eco Display (20MHz / Eco Bri) after inactivity (sec):',
       sleep_timeout: 'Enter Sleep Mode Screen-Off (minutes, 0=off):',
       id_cycle: 'Cycle screen every (sec):',
       gal_title: '📂 On-Board Media Gallery (LittleFS)',
@@ -560,9 +599,10 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       wt_add: '➕ Add City',
       wt_refresh: '🔄 Refresh All Weather Now',
       ab_title: '☕ About LyMini & Buy Me a Coffee (PromptPay QR)',
-      ab_desc: 'LyMini ESP32-C3 1.44" Retro Arcade & Smart Idle TV v0.2.6 by Zotix',
+      ab_desc: 'LyMini ESP32-C3 1.44" Retro Arcade & Smart Idle TV v0.3.2 by Zotix',
       ab_scan: '📱 Scan PromptPay QR Code to Support the Developer (Zotix)',
       ab_show_esp: '👁️ Show QR Code on LyMini Now',
+      auto_save_hint: '⚡ Auto-saved immediately whenever you change any setting',
       btn_save: '💾 Save Settings'
     }
   };
@@ -1302,6 +1342,10 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       }
       if (st.version) {
         document.getElementById('curFwVer').innerText = 'v' + st.version;
+        document.getElementById('topFwVer').innerText = 'v' + st.version;
+        document.title = 'LyMini Arcade & Smart TV v' + st.version;
+        const ab = document.getElementById('abDescText');
+        if (ab) ab.innerText = 'LyMini ESP32-C3 1.44" Retro Arcade & Smart Idle TV v' + st.version + ' by Zotix';
       }
 
       document.getElementById('selRotation').value   = st.rot;
@@ -1383,6 +1427,16 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     loadStatusAndMedia();
   };
 
+  let toastTimer = null;
+  function showToast(msg) {
+    const t = document.getElementById('autoSaveToast');
+    if (!t) return;
+    t.innerText = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
+  }
+
   window.saveAllSettings = async (silent = false) => {
     // Bit 6 (64 = PromptPay QR) is always forced ON!
     let mask = 64;
@@ -1411,12 +1465,33 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       night_st: document.getElementById('inpNightStart').value,
       night_ed: document.getElementById('inpNightEnd').value
     });
-    await fetch('/api/settings?' + params.toString(), { method: 'POST' });
-    if (!silent) {
-      alert(curLang === 'th' ? '✅ บันทึกการตั้งค่าเรียบร้อยแล้ว!' : '✅ Settings saved!');
+    showToast(curLang === 'th' ? '⏳ กำลังบันทึก...' : '⏳ Saving...');
+    try {
+      await fetch('/api/settings?' + params.toString(), { method: 'POST' });
+      showToast(curLang === 'th' ? '✅ บันทึกอัตโนมัติแล้ว' : '✅ Auto-saved');
+    } catch (e) {
+      showToast(curLang === 'th' ? '❌ บันทึกไม่สำเร็จ' : '❌ Save failed');
     }
     loadStatusAndMedia();
   };
+
+  let autoSaveTimer = null;
+  function scheduleAutoSave(delayMs) {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(() => saveAllSettings(true), delayMs);
+  }
+  ['chkClock','chkWeather','chkPhoto','chkVideo','chkAnalog','chkFlip','chkClkWeather',
+   'chkRandom','selRotation','chkBtnRot','selColorBgr','chkNightEn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => scheduleAutoSave(80));
+  });
+  ['inpIdleTime','inpEcoTime','inpSleepTime','inpIdleCycle','inpNightStart','inpNightEnd'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', () => scheduleAutoSave(450));
+      el.addEventListener('change', () => scheduleAutoSave(80));
+    }
+  });
 
   document.getElementById('btnRefreshWeather').onclick = async () => {
     await fetch('/api/refresh_weather', { method: 'POST' });

@@ -7,7 +7,7 @@
 #include <LittleFS.h>
 #include <Update.h>
 #include "SystemSettings.h"
-#include "WebPortalHtml.h"
+#include "WebPortalAssets.h"
 #include "HighScoreStore.h"
 #include "PowerManager.h"
 #include "DisplayCanvas.h"
@@ -121,9 +121,38 @@ public:
     if (!LittleFS.exists("/videos")) LittleFS.mkdir("/videos");
 
     // 1. Main Web Portal UI + OS Captive Portal Auto-Popup Endpoints
+    static const char* headerKeys[] = {"If-None-Match"};
+    _server.collectHeaders(headerKeys, 1);
     _server.on("/", HTTP_GET, [this]() {
       gPower.notifyWebActivity();
-      _server.send_P(200, "text/html", PAGE_INDEX_HTML);
+      _server.sendHeader("Cache-Control", "public, max-age=3600, must-revalidate");
+      _server.sendHeader("ETag", PAGE_INDEX_HTML_ETAG);
+      if (_server.hasHeader("If-None-Match") && _server.header("If-None-Match") == PAGE_INDEX_HTML_ETAG) {
+        _server.send(304, "text/html", "");
+        return;
+      }
+      _server.sendHeader("Content-Encoding", "gzip");
+      _server.send_P(200, "text/html", (const char*)PAGE_INDEX_HTML_GZ, sizeof(PAGE_INDEX_HTML_GZ));
+    });
+
+    _server.on("/manifest.webmanifest", HTTP_GET, [this]() {
+      _server.sendHeader("Cache-Control", "public, max-age=604800");
+      _server.send(200, "application/manifest+json",
+        "{\"name\":\"LyMini Smart TV\",\"short_name\":\"LyMini\",\"start_url\":\"/\",\"display\":\"standalone\","
+        "\"background_color\":\"#0b0f17\",\"theme_color\":\"#0b0f17\","
+        "\"icons\":[{\"src\":\"/icon-192.png\",\"sizes\":\"192x192\",\"type\":\"image/png\"},"
+        "{\"src\":\"/icon.svg\",\"sizes\":\"any\",\"type\":\"image/svg+xml\"}]}");
+    });
+
+    _server.on("/icon-192.png", HTTP_GET, [this]() {
+      _server.sendHeader("Cache-Control", "public, max-age=604800");
+      _server.send_P(200, "image/png", (const char*)ICON_192_PNG, sizeof(ICON_192_PNG));
+    });
+
+    _server.on("/icon.svg", HTTP_GET, [this]() {
+      _server.sendHeader("Cache-Control", "public, max-age=604800");
+      _server.sendHeader("Content-Encoding", "gzip");
+      _server.send_P(200, "image/svg+xml", (const char*)ICON_SVG_GZ, sizeof(ICON_SVG_GZ));
     });
 
     _server.on("/hotspot-detect.html", HTTP_GET, [this]() { sendCaptiveRedirect(); });

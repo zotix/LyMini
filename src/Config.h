@@ -1,8 +1,8 @@
 #pragma once
 #include <Arduino.h>
 
-#define APP_VERSION "0.3.1"
-#define OTA_GITHUB_REPO "zotix/Lymini"
+#define APP_VERSION "0.3.2"
+#define OTA_GITHUB_REPO "zotix/LyMini"
 
 // ============================================================================
 // Spotpear ESP32-C3 1.44" Hardware Pin Definitions (v0.2.1)
