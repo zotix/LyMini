@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 
-#define APP_VERSION "0.3.2"
+#define APP_VERSION "0.3.3"
 #define OTA_GITHUB_REPO "zotix/LyMini"
 
 // ============================================================================

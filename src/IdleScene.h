@@ -64,6 +64,11 @@ private:
     uint8_t mask = gSettings.data.idle_enabled_mask | IDLE_MASK_ABOUT_QR;
     if ((mask & (1 << scr)) == 0) return false;
 
+    // Skip Video playback during Eco Mode unless explicitly enabled
+    if (scr == 3 && gPower.isEcoMode() && !gSettings.data.eco_video_enabled) {
+      return false;
+    }
+
     // If no NTP time synced, do NOT show Clock screens (0: Digital, 4: Analog, 5: Flip, 7: Clock+Weather)
     if ((scr == 0 || scr == 4 || scr == 5 || scr == 7) && !gPower.isTimeSynced()) {
       return false;
@@ -393,6 +398,7 @@ public:
     }
 
     if (!_liveBufferActive && !isScreenEligible(_currentScreen) && millis() > _liveHoldUntilMs) {
+      if (_currentScreen == 3) closeActiveVideo();
       pickNextScreen(0);
     }
 

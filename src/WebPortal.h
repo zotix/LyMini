@@ -265,6 +265,7 @@ public:
       json += "\"cpuMhz\":" + String(gPower.getCpuMhz()) + ",";
       json += "\"idleMask\":" + String(gSettings.data.idle_enabled_mask | IDLE_MASK_ABOUT_QR) + ",";
       json += "\"idleRandom\":" + String(gSettings.data.idle_random_mode) + ",";
+      json += "\"ecoVideo\":" + String(gSettings.data.eco_video_enabled) + ",";
       json += "\"idleLockQr\":" + String(gSettings.data.idle_lock_qr) + ",";
       json += "\"idleTimeout\":" + String(gSettings.data.idle_timeout_sec) + ",";
       json += "\"ecoTimeout\":" + String(gSettings.data.eco_timeout_sec) + ",";
@@ -615,6 +616,9 @@ public:
       }
       if (_server.hasArg("idlernd")) {
         gSettings.data.idle_random_mode = (uint8_t)_server.arg("idlernd").toInt();
+      }
+      if (_server.hasArg("ecovid")) {
+        gSettings.data.eco_video_enabled = (_server.arg("ecovid").toInt() != 0) ? 1 : 0;
       }
       gSettings.data.idle_lock_qr = 0;
       gSettings.save();

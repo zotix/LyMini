@@ -256,6 +256,12 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
           <span data-i18n="id_random">🔀 Random Mode (สุ่มลำดับหน้าจอ และสุ่มรูปภาพ/วิดีโอ)</span>
         </label>
       </div>
+      <div class="chk-item" style="margin-top:6px;">
+        <label class="chk-left">
+          <input type="checkbox" id="chkEcoVideo" />
+          <span data-i18n="id_ecovid">🎬 เล่นวิดีโอเมื่ออยู่ใน Eco Mode (ปิด = ประหยัดแบตมากขึ้น)</span>
+        </label>
+      </div>
 
       <div class="row">
         <div>
@@ -501,6 +507,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       id_qr: '☕ Buy Me a Coffee (PromptPay QR — เปิดแสดงเสมอ)',
       id_lock_qr: '🔒 ล็อกหน้าจอ Idle ให้แสดงเฉพาะ PromptPay QR Code ตลอดเวลา',
       id_random: '🔀 Random Mode (สุ่มลำดับหน้าจอ และสุ่มรูปภาพ/วิดีโอ)',
+      id_ecovid: '🎬 เล่นวิดีโอเมื่ออยู่ใน Eco Mode (ปิด = ประหยัดแบตมากขึ้น)',
       id_timeout: 'เข้าสู่ Idle Display (40MHz / แสง Idle) เมื่อไม่กดปุ่ม (วินาที):',
       eco_timeout: 'เข้าสู่ Eco Display (20MHz / แสง Eco) เมื่อไม่กดปุ่ม (วินาที):',
       sleep_timeout: 'เข้าสู่ Sleep Mode ปิดจอ/พักเครื่อง (นาที, 0=ปิด):',
@@ -569,6 +576,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       id_qr: '☕ Buy Me a Coffee (PromptPay QR — Always Active)',
       id_lock_qr: '🔒 Lock Idle Screen on PromptPay QR Code only',
       id_random: '🔀 Random Mode (Shuffle screens, photos & videos)',
+      id_ecovid: '🎬 Play Video in Eco Mode (Off = better battery life)',
       id_timeout: 'Enter Idle Display (40MHz / Idle Bri) after inactivity (sec):',
       eco_timeout: 'Enter Eco Display (20MHz / Eco Bri) after inactivity (sec):',
       sleep_timeout: 'Enter Sleep Mode Screen-Off (minutes, 0=off):',
@@ -1321,6 +1329,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
       document.getElementById('chkClkWeather').checked = (st.idleMask & 128) !== 0;
 
       document.getElementById('chkRandom').checked      = st.idleRandom === 1;
+      document.getElementById('chkEcoVideo').checked    = st.ecoVideo === 1;
       document.getElementById('inpIdleTime').value      = st.idleTimeout;
       if (st.ecoTimeout !== undefined) {
         document.getElementById('inpEcoTime').value     = st.ecoTimeout;
@@ -1451,6 +1460,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     const params = new URLSearchParams({
       idlemask: mask,
       idlernd: document.getElementById('chkRandom').checked ? 1 : 0,
+      ecovid: document.getElementById('chkEcoVideo').checked ? 1 : 0,
       idletime: document.getElementById('inpIdleTime').value,
       ecotime: document.getElementById('inpEcoTime').value,
       sleeptime: Math.round(Number(document.getElementById('inpSleepTime').value || 0) * 60),
@@ -1481,7 +1491,7 @@ const char PAGE_INDEX_HTML[] PROGMEM = R"rawliteral(
     autoSaveTimer = setTimeout(() => saveAllSettings(true), delayMs);
   }
   ['chkClock','chkWeather','chkPhoto','chkVideo','chkAnalog','chkFlip','chkClkWeather',
-   'chkRandom','selRotation','chkBtnRot','selColorBgr','chkNightEn'].forEach(id => {
+   'chkRandom','chkEcoVideo','selRotation','chkBtnRot','selColorBgr','chkNightEn'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', () => scheduleAutoSave(80));
   });

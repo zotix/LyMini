@@ -21,6 +21,9 @@ class OtaUpdater {
 private:
   bool _modalActive = false;
   uint8_t _modalStage = 0; // 0=Confirm, 1=Result/Error wait key
+  bool _needsCheck = false;
+  bool _aWasHeld = false;
+  OtaReleaseInfo _relInfo;
   String _statusLine1 = "";
   String _statusLine2 = "";
   String _statusLine3 = "";
@@ -251,19 +254,37 @@ public:
   void openConfirmModal() {
     _modalActive = true;
     _modalStage = 0;
+    _needsCheck = true;
+    _aWasHeld = false;
     _isError = false;
+    _relInfo = OtaReleaseInfo();
   }
 
   bool isModalActive() const { return _modalActive; }
+
+  void runUrlOtaWithResult(const String& binUrl, DisplayCanvas& gfx) {
+    String err;
+    if (performUrlOta(binUrl, &gfx, err)) {
+      delay(1200);
+      ESP.restart();
+    } else {
+      _modalStage = 1;
+      _isError = true;
+      _statusLine1 = "OTA Failed!";
+      _statusLine2 = err;
+      _statusLine3 = "Press any key";
+    }
+  }
 
   // Returns true while modal owns the screen
   bool updateAndRender(const InputState& input, DisplayCanvas& gfx) {
     if (!_modalActive) return false;
 
     if (_modalStage == 0) {
-      // Confirm screen: A = Confirm & Check, B or BOOT = Cancel
-      if (input.leftPressed) {
-        // Ensure Wi-Fi is ON and try to connect if needed
+      if (_needsCheck) {
+        _needsCheck = false;
+        _aWasHeld = false;
+        _relInfo = OtaReleaseInfo();
         if (WiFi.status() != WL_CONNECTED) {
           gPower.requestWifiOn();
           uint32_t waitStart = millis();
@@ -272,78 +293,89 @@ public:
             delay(100);
           }
         }
-
         if (WiFi.status() != WL_CONNECTED) {
-          _modalStage = 1;
-          _isError = true;
-          _statusLine1 = "No Wi-Fi Internet";
-          _statusLine2 = "Connect STA Wi-Fi";
-          _statusLine3 = "in Web Portal first";
-          return true;
-        }
-
-        drawScreenProgress(gfx, "Checking Online...", "GitHub Releases", -1, 0, 0, Color565::Cyan);
-        OtaReleaseInfo rel = checkGitHubRelease();
-        if (!rel.ok) {
-          _modalStage = 1;
-          _isError = true;
-          _statusLine1 = "Check Failed!";
-          _statusLine2 = rel.error;
-          _statusLine3 = "Press any key";
-          return true;
-        }
-
-        if (!rel.hasUpdate) {
-          _modalStage = 1;
-          _isError = false;
-          _statusLine1 = "Already Up To Date";
-          _statusLine2 = "Cur: v" + String(APP_VERSION);
-          _statusLine3 = "New: v" + rel.latestVersion;
-          return true;
-        }
-
-        String err;
-        if (performUrlOta(rel.binUrl, &gfx, err)) {
-          delay(1200);
-          ESP.restart();
+          _relInfo.ok = false;
+          _relInfo.error = "No Wi-Fi Internet";
         } else {
-          _modalStage = 1;
-          _isError = true;
-          _statusLine1 = "OTA Failed!";
-          _statusLine2 = err;
-          _statusLine3 = "Press any key";
+          drawScreenProgress(gfx, "Checking GitHub...", OTA_GITHUB_REPO, -1, 0, 0, Color565::Cyan);
+          _relInfo = checkGitHubRelease();
         }
-        return true;
-      } else if (input.rightPressed || input.okShortReleased) {
+      }
+
+      if (input.rightPressed || input.okShortReleased) {
         _modalActive = false;
         return false;
       }
 
-      // Render Confirmation Screen
+      if (_relInfo.ok && _relInfo.binUrl.length() > 0) {
+        if (_relInfo.hasUpdate) {
+          if (input.leftPressed) {
+            runUrlOtaWithResult(_relInfo.binUrl, gfx);
+            return true;
+          }
+        } else {
+          if (input.btnAHold5s) {
+            _aWasHeld = false;
+            runUrlOtaWithResult(_relInfo.binUrl, gfx);
+            return true;
+          } else if (input.leftHeld) {
+            _aWasHeld = true;
+          } else if (_aWasHeld) {
+            _aWasHeld = false;
+            _needsCheck = true;
+            return true;
+          }
+        }
+      } else {
+        if (input.leftPressed) {
+          _needsCheck = true;
+          return true;
+        }
+      }
+
+      // Render Confirmation Screen with GitHub Version
       gfx.clear(Color565::Black);
       gfx.fillRect(0, 0, SCREEN_WIDTH, 18, Color565::Navy);
       gfx.drawCenteredText(5, "OTA UPDATE?", Color565::Gold);
 
       char vbuf[28];
       snprintf(vbuf, sizeof(vbuf), "Current: v%s", APP_VERSION);
-      gfx.drawCenteredText(28, vbuf, Color565::White);
+      gfx.drawCenteredText(24, vbuf, Color565::White);
 
-      if (WiFi.status() == WL_CONNECTED) {
-        String wline = "WiFi: " + WiFi.SSID();
-        if (wline.length() > 20) wline = wline.substring(0, 20);
-        gfx.drawCenteredText(44, wline.c_str(), Color565::Lime);
+      if (_relInfo.ok) {
+        char gbuf[28];
+        snprintf(gbuf, sizeof(gbuf), "GitHub:  v%s", _relInfo.latestVersion.c_str());
+        gfx.drawCenteredText(38, gbuf, _relInfo.hasUpdate ? Color565::Lime : Color565::Cyan);
+
+        if (_relInfo.hasUpdate) {
+          gfx.drawCenteredText(56, "New version ready!", Color565::Gold);
+          gfx.drawCenteredText(70, "Press A to install", Color565::GrayLight);
+          gfx.fillRect(4, 94, 120, 14, Color565::Emerald);
+          gfx.drawCenteredText(97, "A: UPDATE NOW", Color565::White);
+        } else {
+          if (input.leftHeld && _relInfo.binUrl.length() > 0) {
+            char fbuf[28];
+            uint16_t remS = (input.btnAHoldRemMs + 999) / 1000;
+            snprintf(fbuf, sizeof(fbuf), "Force OTA in %us...", remS);
+            gfx.drawCenteredText(56, fbuf, Color565::Orange);
+          } else {
+            gfx.drawCenteredText(56, "Already Up To Date", Color565::Lime);
+          }
+          if (_relInfo.binUrl.length() > 0) {
+            gfx.drawCenteredText(72, "Hold A 5s: Force", Color565::GrayLight);
+          }
+          gfx.fillRect(4, 94, 120, 14, Color565::Emerald);
+          gfx.drawCenteredText(97, "A: RE-CHECK", Color565::White);
+        }
       } else {
-        gfx.drawCenteredText(44, "WiFi: Auto-Connect", Color565::Orange);
+        gfx.drawCenteredText(42, "Check Failed!", Color565::Orange);
+        gfx.drawCenteredText(58, _relInfo.error.c_str(), Color565::GrayLight);
+        gfx.fillRect(4, 94, 120, 14, Color565::Emerald);
+        gfx.drawCenteredText(97, "A: RETRY CHECK", Color565::White);
       }
 
-      gfx.drawCenteredText(64, "Check GitHub &", Color565::GrayLight);
-      gfx.drawCenteredText(76, "Install Latest FW", Color565::GrayLight);
-
-      gfx.fillRect(4, 96, 120, 13, Color565::Emerald);
-      gfx.drawCenteredText(99, "A: CHECK & UPDATE", Color565::White);
-
-      gfx.fillRect(4, 112, 120, 13, Color565::Crimson);
-      gfx.drawCenteredText(115, "B/BOOT: CANCEL", Color565::White);
+      gfx.fillRect(4, 111, 120, 14, Color565::Crimson);
+      gfx.drawCenteredText(114, "B/BOOT: CANCEL", Color565::White);
       gfx.present();
       return true;
     }

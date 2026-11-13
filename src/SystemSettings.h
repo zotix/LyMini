@@ -57,6 +57,7 @@ struct SystemSettingsData {
   uint8_t idle_enabled_mask = IDLE_MASK_ALL;
   uint8_t idle_random_mode  = 1;   // 1 = Random screen & media, 0 = Sequential
   uint8_t idle_lock_qr      = 0;   // 1 = Lock Idle on PromptPay QR code
+  uint8_t eco_video_enabled = 0;   // 1 = Allow Video playback in Eco Mode, 0 = Skip Video in Eco Mode
   uint8_t led_enabled       = 1;
 
   // Night mode screen-off schedule
@@ -179,6 +180,7 @@ public:
 
       data.idle_random_mode  = prefs.getUChar("idlernd", 1);
       data.idle_lock_qr      = 0;
+      data.eco_video_enabled = prefs.getUChar("ecovid", 0);
       data.led_enabled       = prefs.getUChar("led", 1);
       data.night_mode_enabled= prefs.getUChar("night_en", 0);
       data.night_start_hour  = prefs.getUChar("night_st", 23);
@@ -249,6 +251,7 @@ public:
       prefs.putUChar("idlemask3", data.idle_enabled_mask);
       prefs.putUChar("idlernd", data.idle_random_mode);
       prefs.putUChar("lockqr", data.idle_lock_qr);
+      prefs.putUChar("ecovid", data.eco_video_enabled);
       prefs.putUChar("led", data.led_enabled);
       prefs.putUChar("night_en", data.night_mode_enabled);
       prefs.putUChar("night_st", data.night_start_hour);

@@ -110,6 +110,7 @@ public:
 
   bool isEcoMode(uint32_t idleSec) const {
     if (_forceEco) return true;
+    if (!_usbConnected && _batteryPct < 50) return true;
     if (gSettings.data.eco_timeout_sec == 0) return false;
     return (idleSec >= gSettings.data.eco_timeout_sec);
   }
@@ -119,6 +120,7 @@ public:
   }
 
   bool isSleepMode(uint32_t idleSec) const {
+    if (!_usbConnected && _batteryPct < 20) return true;
     if (gSettings.data.sleep_timeout_sec == 0) return false;
     return (idleSec >= gSettings.data.sleep_timeout_sec);
   }
